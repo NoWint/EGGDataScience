@@ -10,6 +10,7 @@ from app.analysis.erp import (
     run_erp_analysis, extract_epochs, average_epochs,
     compute_peak, detect_erp_components, compute_difference_wave,
     compute_peak_to_peak, compute_rmse, ERP_COMPONENTS,
+    baseline_correct, compute_channel_diff,
 )
 from app.analysis import generate_sample_eeg, events_to_df, load_eeg
 from pathlib import Path
@@ -34,6 +35,13 @@ class CompareErpRequest(BaseModel):
     conditions: List[str] = ["AtoA", "AtoB"]
     fs: int = 250
     event_id: str = "X0"
+
+
+class ComponentsDetailRequest(BaseModel):
+    waveform: List[List[float]]
+    fs: int = 250
+    pre_stim: Optional[float] = None
+    channel_names: Optional[List[str]] = None
 
 
 def _default_events_df() -> pd.DataFrame:
@@ -121,6 +129,45 @@ async def analyze_uploaded(
         eeg_tmp.unlink(missing_ok=True)
         if events_tmp is not None:
             events_tmp.unlink(missing_ok=True)
+
+
+@router.post("/components-detail")
+async def components_detail(req: ComponentsDetailRequest):
+    """
+    详细 ERP 成分分析（含 significance 与通道差异）
+
+    参数:
+        waveform: 平均 ERP 波形 (n_samples, n_channels)
+                  约定 waveform[0] 对应刺激 onset (t=0)
+                  若提供 pre_stim，则 waveform 含 pre-stim 段，自动截取 post-stim 段用于成分检测
+        fs: 采样率
+        pre_stim: 刺激前时长 (秒)，若提供则从该位置截取 post-stim 段
+        channel_names: 通道名列表 (默认 Fp1, Fp2, Fpz)
+    """
+    waveform = np.array(req.waveform, dtype=float)
+    if waveform.ndim == 1:
+        waveform = waveform[:, np.newaxis]
+
+    # 若提供 pre_stim，截取 post-stim 段用于成分检测
+    if req.pre_stim is not None and req.pre_stim > 0:
+        pre_samples = int(round(req.pre_stim * req.fs))
+        waveform_post = waveform[pre_samples:, :]
+    else:
+        waveform_post = waveform
+
+    components = detect_erp_components(waveform_post, req.fs)
+
+    # 通道差异分析（使用完整波形）
+    channel_names = tuple(req.channel_names) if req.channel_names else ('Fp1', 'Fp2', 'Fpz')
+    channel_diff = compute_channel_diff(waveform, channel_names)
+
+    return {
+        'components': components,
+        'channel_diff': channel_diff,
+        'n_channels': int(waveform.shape[1]),
+        'n_samples': int(waveform.shape[0]),
+        'fs': req.fs,
+    }
 
 
 @router.post("/compare")

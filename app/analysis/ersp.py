@@ -45,15 +45,36 @@ def _morlet_wavelet(freq: float, fs: int, wavelet_width: float = 5.0,
     return wavelet
 
 
-def compute_cwt(data, fs, freqs=None, wavelet_width=5.0):
+def compute_freqs_logspace(fmin: float = 1.0, fmax: float = 45.0,
+                           n_freqs: int = 50) -> np.ndarray:
+    """
+    生成对数间隔的频率数组 (低频分辨率更高)
+
+    参数:
+        fmin: 最低频率 (Hz)
+        fmax: 最高频率 (Hz)
+        n_freqs: 频率点数
+
+    返回:
+        (n_freqs,) 频率数组 (对数间隔)
+    """
+    if fmin <= 0:
+        fmin = 1.0
+    if fmax <= fmin:
+        fmax = fmin + 1.0
+    return np.logspace(np.log10(fmin), np.log10(fmax), n_freqs)
+
+
+def compute_cwt(data, fs, freqs=None, wavelet_width=5.0, n_freqs=50):
     """
     连续小波变换 (Morlet 小波, 复小波, 基于 FFT 卷积加速)
 
     参数:
         data: (n_samples,) 或 (n_samples, n_channels)
         fs: 采样率
-        freqs: 频率数组, 默认 np.linspace(1, 45, 45)
+        freqs: 频率数组, 默认对数间隔 (1-45Hz, n_freqs 点)
         wavelet_width: 小波宽度参数 (默认 5.0 = 周期数)
+        n_freqs: freqs 为 None 时的频率点数 (默认 50, 对数间隔)
 
     返回:
         {'power': (len(freqs), n_samples) 或 (n_channels, len(freqs), n_samples),
@@ -61,7 +82,7 @@ def compute_cwt(data, fs, freqs=None, wavelet_width=5.0):
          'freqs': [...]}
     """
     if freqs is None:
-        freqs = np.linspace(1, 45, 45)
+        freqs = compute_freqs_logspace(1, 45, n_freqs)
     freqs = np.asarray(freqs, dtype=float)
 
     data = np.asarray(data, dtype=float)
@@ -152,8 +173,72 @@ def _extract_epochs(data: np.ndarray, fs: int, events_df: pd.DataFrame,
     return epochs, times
 
 
+def _compute_epochs_power(epochs: np.ndarray, fs: int,
+                          freqs: np.ndarray) -> np.ndarray:
+    """
+    计算每个 epoch 的时频功率 (多通道平均)
+
+    参数:
+        epochs: (n_epochs, n_samples_epoch, n_channels)
+        fs: 采样率
+        freqs: 频率数组
+
+    返回:
+        (n_epochs, n_freqs, n_times) 功率矩阵
+    """
+    n_epochs = epochs.shape[0]
+    n_freqs = len(freqs)
+    n_times = epochs.shape[1]
+    power = np.zeros((n_epochs, n_freqs, n_times))
+    for ep in range(n_epochs):
+        cwt_result = compute_cwt(epochs[ep], fs, freqs=freqs)
+        p = cwt_result['power']
+        if p.ndim == 3:  # (n_channels, n_freqs, n_times)
+            p = p.mean(axis=0)
+        power[ep] = p
+    return power
+
+
+def _compute_ersp_from_power(epochs_power: np.ndarray, times: np.ndarray,
+                             freqs: np.ndarray,
+                             baseline_start: float, baseline_end: float,
+                             baseline_method: str = 'median'
+                             ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    从 per-epoch 功率矩阵计算 ERSP
+
+    参数:
+        epochs_power: (n_epochs, n_freqs, n_times)
+        times: 时间轴
+        freqs: 频率轴
+        baseline_start: 基线起始时间 (秒)
+        baseline_end: 基线结束时间 (秒)
+        baseline_method: 'median' (中位数, 抗异常值) 或 'mean' (均值)
+
+    返回:
+        (ersp: (n_freqs, n_times) dB 矩阵,
+         power_avg: (n_freqs, n_times) 平均功率,
+         bl_mask: 基线时间掩码)
+    """
+    power_avg = epochs_power.mean(axis=0)
+    n_times = len(times)
+    bl_mask = (times >= baseline_start) & (times <= baseline_end)
+    if bl_mask.sum() < 1:
+        bl_mask = np.arange(n_times) < max(n_times // 10, 1)
+
+    if baseline_method == 'median':
+        baseline_val = np.median(power_avg[:, bl_mask], axis=1, keepdims=True)
+    else:
+        baseline_val = np.mean(power_avg[:, bl_mask], axis=1, keepdims=True)
+    baseline_val = np.maximum(baseline_val, 1e-12)
+
+    ersp = 10 * np.log10(power_avg / baseline_val)
+    return ersp, power_avg, bl_mask
+
+
 def compute_ersp(data, fs, events_df, event_id='X0', pre_stim=2.0, post_stim=5.0,
-                 freqs=None, baseline_start=-2.0, baseline_end=-0.2):
+                 freqs=None, baseline_start=-2.0, baseline_end=-0.2,
+                 baseline_method='median', n_freqs=50):
     """
     事件相关谱扰动 (ERSP)
 
@@ -161,7 +246,12 @@ def compute_ersp(data, fs, events_df, event_id='X0', pre_stim=2.0, post_stim=5.0
         1. 提取事件锁定的 epochs
         2. 对每个 epoch 做 CWT 得到时频功率
         3. 平均各 epoch 的功率
-        4. 用基线期功率归一化: ERSP = 10*log10(power / baseline_mean)
+        4. 用基线期功率归一化: ERSP = 10*log10(power / baseline)
+           baseline_method='median' 用中位数 (更抗异常值), 'mean' 用均值
+
+    参数:
+        baseline_method: 基线归一化方法 ('median' 或 'mean', 默认 'median')
+        n_freqs: freqs 为 None 时的频率点数 (默认 50, 对数间隔)
 
     返回:
         {'times': [...], 'freqs': [...], 'ersp': (n_freqs, n_times) dB 矩阵,
@@ -170,42 +260,26 @@ def compute_ersp(data, fs, events_df, event_id='X0', pre_stim=2.0, post_stim=5.0
     若事件只出现一次, 用滑窗法在事件周围生成伪 epochs
     """
     if freqs is None:
-        freqs = np.linspace(1, 45, 45)
+        freqs = compute_freqs_logspace(1, 45, n_freqs)
     freqs = np.asarray(freqs, dtype=float)
 
     data = np.asarray(data, dtype=float)
     if data.ndim == 1:
         data = data[:, np.newaxis]
-    n_samples, n_channels = data.shape
 
     # 1. 提取 epochs
     epochs, times = _extract_epochs(data, fs, events_df, event_id,
                                     pre_stim, post_stim)
-    n_epochs, n_epoch_samples, _ = epochs.shape
+    n_epochs = epochs.shape[0]
 
-    # 2. 对每个 epoch 做 CWT, 多通道平均
-    power_avg = None
-    for ep in range(n_epochs):
-        # epochs[ep] shape: (n_epoch_samples, n_channels)
-        cwt_result = compute_cwt(epochs[ep], fs, freqs=freqs)
-        # 多通道平均功率: (n_freqs, n_times)
-        power_ep = cwt_result['power'].mean(axis=0) if cwt_result['power'].ndim == 3 \
-            else cwt_result['power']
-        if power_avg is None:
-            power_avg = power_ep
-        else:
-            power_avg += power_ep
-    power_avg /= n_epochs
+    # 2. per-epoch 功率
+    epochs_power = _compute_epochs_power(epochs, fs, freqs)
 
     # 3. 基线归一化
-    bl_mask = (times >= baseline_start) & (times <= baseline_end)
-    if bl_mask.sum() < 1:
-        # 退路: 使用前 10% 时间窗作基线
-        bl_mask = np.arange(n_epoch_samples) < max(n_epoch_samples // 10, 1)
-    baseline_mean = power_avg[:, bl_mask].mean(axis=1, keepdims=True)
-    baseline_mean = np.maximum(baseline_mean, 1e-12)
-
-    ersp = 10 * np.log10(power_avg / baseline_mean)
+    ersp, _, _ = _compute_ersp_from_power(
+        epochs_power, times, freqs,
+        baseline_start, baseline_end, baseline_method,
+    )
 
     return {
         'times': times.tolist(),
@@ -239,6 +313,130 @@ def compute_erd_ers(ersp_matrix, threshold=0):
         'ers_mask': ers_mask.tolist(),
         'erd_ratio': erd_ratio,
         'ers_ratio': ers_ratio,
+    }
+
+
+# ========== 3b. 置换检验 & 跨条件对比 ==========
+def permutation_test_ersp(epochs_power, baseline_power,
+                          n_permutations=1000) -> Dict:
+    """
+    对每个时频点做置换检验, 评估 ERSP 的统计显著性
+
+    参数:
+        epochs_power: (n_epochs, n_freqs, n_times) 刺激后功率
+        baseline_power: (n_epochs, n_freqs, n_baseline_times) 基线期功率
+        n_permutations: 置换次数 (建议 ≤ 200 以控制时间)
+
+    返回:
+        {'p_values': (n_freqs, n_times) 矩阵,
+         'significant_mask': bool 矩阵 (p < 0.05)}
+    """
+    epochs_power = np.asarray(epochs_power, dtype=float)
+    baseline_power = np.asarray(baseline_power, dtype=float)
+
+    n_epochs, n_freqs, n_times = epochs_power.shape
+
+    # 基线功率: 每个 epoch 在基线时段取均值 -> (n_epochs, n_freqs)
+    baseline_per_epoch = baseline_power.mean(axis=2)
+    # 观测基线均值 (跨 epoch) -> (n_freqs,)
+    baseline_observed = baseline_per_epoch.mean(axis=0)
+
+    # 刺激后各 (freq, time) 的跨 epoch 均值
+    post_mean = epochs_power.mean(axis=0)  # (n_freqs, n_times)
+
+    # 实际差异: post - baseline (broadcast baseline 到每个 time)
+    actual_diff = post_mean - baseline_observed[:, None]  # (n_freqs, n_times)
+
+    # 池化: 将每个 epoch 的 post 值与 baseline 值合并
+    # pooled shape: (2*n_epochs, n_freqs, n_times)
+    # baseline 在 time 维度上广播 (每个 epoch 的 baseline 值对所有 time 相同)
+    baseline_broadcast = np.broadcast_to(
+        baseline_per_epoch[:, :, None], (n_epochs, n_freqs, n_times)
+    )
+    pooled = np.concatenate([epochs_power, baseline_broadcast], axis=0)
+    n_pooled = 2 * n_epochs
+    half = n_epochs
+
+    rng = np.random.default_rng(0)
+    abs_actual = np.abs(actual_diff)
+
+    # 逐次置换, 累计计数 (避免存储全部零分布)
+    count = np.zeros_like(actual_diff)
+    for _ in range(n_permutations):
+        idx = rng.permutation(n_pooled)
+        group_a = pooled[idx[:half]]
+        group_b = pooled[idx[half:]]
+        null_diff = group_a.mean(axis=0) - group_b.mean(axis=0)
+        count += (np.abs(null_diff) >= abs_actual).astype(int)
+
+    # 双尾 p 值 (加 1 平滑避免 p=0)
+    p_values = (count + 1.0) / (n_permutations + 1.0)
+    significant_mask = p_values < 0.05
+
+    return {
+        'p_values': p_values,
+        'significant_mask': significant_mask,
+    }
+
+
+def compare_ersp_conditions(ersp_a, ersp_b, n_permutations=200) -> Dict:
+    """
+    跨条件 ERSP 对比: 计算差值矩阵和统计显著性
+
+    参数:
+        ersp_a, ersp_b: ERSP 结果 dict (含 'ersp') 或 (n_freqs, n_times) dB 矩阵
+                        若 dict 包含 'epochs_power' 字段, 则做置换检验;
+                        否则基于效应量 (|diff| > 1 dB) 标记显著性
+        n_permutations: 置换次数
+
+    返回:
+        {'diff': 差值矩阵, 'p_values': p 值矩阵,
+         'significant_mask': 显著性掩码, 'n_permutations': int}
+    """
+    # 提取 ERSP 矩阵与可选的 per-epoch 功率
+    if isinstance(ersp_a, dict):
+        mat_a = np.asarray(ersp_a['ersp'], dtype=float)
+        epa = ersp_a.get('epochs_power')
+    else:
+        mat_a = np.asarray(ersp_a, dtype=float)
+        epa = None
+    if isinstance(ersp_b, dict):
+        mat_b = np.asarray(ersp_b['ersp'], dtype=float)
+        epb = ersp_b.get('epochs_power')
+    else:
+        mat_b = np.asarray(ersp_b, dtype=float)
+        epb = None
+
+    diff = mat_b - mat_a
+    abs_diff = np.abs(diff)
+
+    if epa is not None and epb is not None:
+        # 有 per-epoch 功率: 真正的置换检验 (打乱条件标签)
+        epa = np.asarray(epa, dtype=float)
+        epb = np.asarray(epb, dtype=float)
+        pooled = np.concatenate([epa, epb], axis=0)
+        n_a = epa.shape[0]
+        n_total = pooled.shape[0]
+        rng = np.random.default_rng(0)
+        count = np.zeros_like(diff)
+        for _ in range(n_permutations):
+            idx = rng.permutation(n_total)
+            perm_a = pooled[idx[:n_a]].mean(axis=0)
+            perm_b = pooled[idx[n_a:]].mean(axis=0)
+            perm_diff = perm_b - perm_a
+            count += (np.abs(perm_diff) >= abs_diff).astype(int)
+        p_values = (count + 1.0) / (n_permutations + 1.0)
+        significant_mask = p_values < 0.05
+    else:
+        # 无 per-epoch 功率: 基于效应量阈值
+        significant_mask = abs_diff > 1.0
+        p_values = np.where(significant_mask, 0.01, 0.5)
+
+    return {
+        'diff': diff.tolist(),
+        'p_values': p_values.tolist(),
+        'significant_mask': significant_mask.tolist(),
+        'n_permutations': int(n_permutations),
     }
 
 
@@ -325,7 +523,7 @@ def compute_itpc(data, fs, events_df, event_id='X0', pre_stim=1.0, post_stim=2.0
          'n_epochs': int}
     """
     if freqs is None:
-        freqs = np.linspace(1, 45, 45)
+        freqs = compute_freqs_logspace(1, 45, 50)
     freqs = np.asarray(freqs, dtype=float)
 
     data = np.asarray(data, dtype=float)
@@ -389,37 +587,64 @@ def _downsample_axis(axis: np.ndarray, target_len: int) -> np.ndarray:
 
 def run_ersp_analysis(data, fs, events_df, event_id='X0'):
     """
-    完整 ERSP 分析流水线
+    完整 ERSP 分析流水线 (含置换检验)
 
     返回:
-        {'ersp': {...}, 'erd_ers': {...}, 'pac': {...}, 'itpc': {...},
+        {'ersp': {...含 permutation_test...}, 'erd_ers': {...},
+         'pac': {...}, 'itpc': {...},
          'event_id': ..., 'fs': fs, 'n_channels': int}
 
     注意: 时频矩阵转 list 时降采样 (频率轴 30 点, 时间轴 200 点)
+          置换检验默认 n_permutations=200 以控制计算时间
     """
     data = np.asarray(data, dtype=float)
     if data.ndim == 1:
         data = data[:, np.newaxis]
     n_samples, n_channels = data.shape
 
-    # 频率轴 (用于 ERSP/ITPC)
-    freqs = np.linspace(1, 45, 45)
+    # 频率轴 (对数间隔, 50 点)
+    freqs = compute_freqs_logspace(1, 45, 50)
 
-    # 1. ERSP
-    ersp_result = compute_ersp(
-        data, fs, events_df, event_id=event_id,
-        pre_stim=2.0, post_stim=5.0,
-        freqs=freqs, baseline_start=-2.0, baseline_end=-0.2,
+    # 1. ERSP + 置换检验 (共享 per-epoch 功率计算, 避免重复 CWT)
+    epochs, times = _extract_epochs(
+        data, fs, events_df, event_id, pre_stim=2.0, post_stim=5.0
+    )
+    n_epochs = epochs.shape[0]
+    epochs_power = _compute_epochs_power(epochs, fs, freqs)
+    ersp, _, bl_mask = _compute_ersp_from_power(
+        epochs_power, times, freqs,
+        baseline_start=-2.0, baseline_end=-0.2, baseline_method='median',
+    )
+
+    # 置换检验 (限制 200 次以控制时间)
+    post_mask = ~bl_mask
+    baseline_power = epochs_power[:, :, bl_mask]
+    post_power = epochs_power[:, :, post_mask]
+    perm_result = permutation_test_ersp(
+        post_power, baseline_power, n_permutations=200
     )
 
     # 降采样时频矩阵
-    ersp_matrix = np.array(ersp_result['ersp'])
+    ersp_matrix = ersp
     ersp_ds = _downsample_matrix(ersp_matrix, max_freqs=30, max_times=200)
-    ersp_freqs = _downsample_axis(np.array(ersp_result['freqs']), 30)
-    ersp_times = _downsample_axis(np.array(ersp_result['times']), 200)
-    ersp_result['ersp'] = ersp_ds.tolist()
-    ersp_result['freqs'] = ersp_freqs.tolist()
-    ersp_result['times'] = ersp_times.tolist()
+    ersp_freqs = _downsample_axis(freqs, 30)
+    ersp_times = _downsample_axis(times, 200)
+    p_vals_ds = _downsample_matrix(perm_result['p_values'], 30, 200)
+    sig_ds = _downsample_matrix(
+        perm_result['significant_mask'].astype(int), 30, 200
+    )
+
+    ersp_result = {
+        'times': ersp_times.tolist(),
+        'freqs': ersp_freqs.tolist(),
+        'ersp': ersp_ds.tolist(),
+        'n_epochs': int(n_epochs),
+        'permutation_test': {
+            'p_values': p_vals_ds.tolist(),
+            'significant_mask': sig_ds.tolist(),
+            'n_permutations': 200,
+        },
+    }
 
     # 2. ERD/ERS 分类
     erd_ers = compute_erd_ers(ersp_matrix, threshold=0)

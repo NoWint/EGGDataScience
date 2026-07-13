@@ -7,7 +7,7 @@ import json
 import tempfile
 import shutil
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 import numpy as np
 import pandas as pd
@@ -133,6 +133,7 @@ class AnalyzeRequest(BaseModel):
     overlap: float = 0.5
     tolerance: float = 0.05
     recovery_window: int = 30
+    preprocess_config: Optional[Dict] = None  # 可选：高级预处理配置
 
 
 @app.post("/api/analyze")
@@ -164,7 +165,8 @@ async def analyze_data(req: AnalyzeRequest):
         'tolerance': req.tolerance, 'recovery_window': req.recovery_window,
     }
 
-    result = run_full_pipeline(data, fs, events_df, config=config)
+    result = run_full_pipeline(data, fs, events_df, config=config,
+                               preprocess_config=req.preprocess_config)
     result['condition'] = req.condition
     result['channels'] = channels
     result['n_samples'] = len(data)

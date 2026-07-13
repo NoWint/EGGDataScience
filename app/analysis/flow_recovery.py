@@ -88,6 +88,15 @@ def preprocess(data, fs, lp=45.0, hp=1.0, notch=50.0, artifact_threshold=100.0):
     return processed, artifact_ratio
 
 
+def preprocess_advanced(data, fs, config=None):
+    """高级预处理（参数化版本，复用 data_utils）
+    config: {'lp': 45.0, 'hp': 1.0, 'notch': 50.0, 'resample_fs': None, ...}
+    返回: {'data': ..., 'fs': ..., 'steps': [...]}
+    """
+    from app.analysis.data_utils import preprocess_pipeline
+    return preprocess_pipeline(data, fs, config)
+
+
 # ========== 3. 特征提取 ==========
 def compute_band_powers(data, fs, window_sec=2.0, overlap=0.5):
     """
@@ -412,9 +421,10 @@ def events_to_df(events):
 
 
 # ========== 8. 完整分析流水线 ==========
-def run_full_pipeline(data, fs, events_df, config=None):
+def run_full_pipeline(data, fs, events_df, config=None, preprocess_config=None):
     """
     运行完整分析流水线
+    preprocess_config: 可选，若提供则用 preprocess_advanced 替代默认 preprocess
     返回: dict 含所有结果
     """
     if config is None:
@@ -434,11 +444,18 @@ def run_full_pipeline(data, fs, events_df, config=None):
     recovery_start = evt.get('R0', 660.0)
 
     # 1. 预处理
-    processed, artifact_ratio = preprocess(
-        data, fs,
-        lp=config['lp'], hp=config['hp'], notch=config['notch'],
-        artifact_threshold=config['artifact_threshold']
-    )
+    if preprocess_config is not None:
+        # 使用高级参数化预处理（复用 data_utils.preprocess_pipeline）
+        prep_result = preprocess_advanced(data, fs, preprocess_config)
+        processed = prep_result['data']
+        fs = prep_result['fs']  # 采样率可能因重采样改变
+        artifact_ratio = 0.0    # 高级预处理不做伪迹剔除
+    else:
+        processed, artifact_ratio = preprocess(
+            data, fs,
+            lp=config['lp'], hp=config['hp'], notch=config['notch'],
+            artifact_threshold=config['artifact_threshold']
+        )
 
     # 2. 特征提取
     features = extract_features(processed, fs,

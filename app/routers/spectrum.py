@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from typing import Optional
 from app.analysis.spectrum import (
     run_spectrum_analysis, compute_psd, compute_band_powers,
-    compute_spectrogram, compare_conditions_psd,
+    compute_spectrogram, compare_conditions_psd, compute_aperiodic_signal,
 )
 from app.analysis import generate_sample_eeg, load_eeg
 from pathlib import Path
@@ -16,6 +16,19 @@ router = APIRouter(prefix="/api/spectrum", tags=["spectrum"])
 
 # 复用主服务的上传目录
 UPLOAD_DIR = Path(__file__).parent.parent.parent / "data" / "uploads"
+
+
+def _get_results_store() -> dict:
+    """获取主服务的分析结果存储
+    python -m app.server 启动时 __main__ 与 app.server 是不同模块，
+    需优先从 __main__ 获取（实际运行并修改 RESULTS_STORE 的模块）
+    """
+    import sys
+    main_mod = sys.modules.get('__main__')
+    if main_mod and hasattr(main_mod, 'RESULTS_STORE'):
+        return main_mod.RESULTS_STORE
+    from app.server import RESULTS_STORE
+    return RESULTS_STORE
 
 
 class SampleSpectrumRequest(BaseModel):
@@ -49,6 +62,11 @@ async def analyze_sample(req: SampleSpectrumRequest):
     result = run_spectrum_analysis(data, req.fs, req.nperseg, req.overlap)
     result['condition'] = req.condition
     result['disruption'] = disruption
+
+    # 存储到 RESULTS_STORE 供后续 /aperiodic 查询
+    store = _get_results_store()
+    store[req.condition] = result
+
     return result
 
 
@@ -84,6 +102,44 @@ async def analyze_uploaded(
         return result
     finally:
         tmp_path.unlink(missing_ok=True)
+
+
+@router.get("/aperiodic/{condition}")
+async def get_aperiodic(condition: str):
+    """
+    获取指定条件的 1/f 斜率分析（从 RESULTS_STORE 获取数据）
+
+    返回:
+        {'slope': float, 'intercept': float,
+         'fit_freqs': [...], 'fit_line': [...],
+         'r_squared': float, 'condition': str}
+    """
+    store = _get_results_store()
+    if condition not in store:
+        available = list(store.keys())
+        raise HTTPException(404, f"未找到条件: {condition}，可用: {available}")
+
+    result = store[condition]
+
+    # 优先使用已计算的 aperiodic_signal
+    if 'aperiodic_signal' in result:
+        ap = dict(result['aperiodic_signal'])
+        ap['condition'] = condition
+        return ap
+
+    # 否则从 psd 数据实时计算
+    psd_data = result.get('psd')
+    if not psd_data:
+        raise HTTPException(400, f"条件 {condition} 无 PSD 数据，无法计算 1/f 斜率")
+
+    freqs = np.array(psd_data.get('freqs', []))
+    psd = np.array(psd_data.get('psd', []))
+    if len(freqs) == 0 or len(psd) == 0:
+        raise HTTPException(400, f"条件 {condition} PSD 数据不完整")
+
+    aperiodic = compute_aperiodic_signal(psd, freqs)
+    aperiodic['condition'] = condition
+    return aperiodic
 
 
 @router.post("/compare")
