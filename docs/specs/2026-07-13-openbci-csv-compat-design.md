@@ -246,7 +246,7 @@ result_out['has_markers'] = len(result['markers'] or []) > 0
 ## 测试策略
 
 用 OpenBCI GUI 仓库自带的样本文件测试:
-- [OpenBCI_GUI-v6-meditation.txt](file:///Users/xiatian/Desktop/EEG-Science/OpenBCI_GUI/data/EEG_Sample_Data/OpenBCI_GUI-v6-meditation.txt) — Cyton 8ch ODF
+- [OpenBCI_GUI-v6-meditation.txt](file:///Users/xiatian/Desktop/EEG-Science/OpenBCI_GUI/OpenBCI_GUI/data/EEG_Sample_Data/OpenBCI_GUI-v6-meditation.txt) — Cyton 8ch ODF
 
 测试用例:
 1. ODF 检测 → 解析 8 通道 EXG + 3 通道 Accel + Marker
