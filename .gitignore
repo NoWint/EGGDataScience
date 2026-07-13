@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 项目数据
+data/uploads/*
+!data/uploads/.gitkeep
+data/*.db
+
+# Skill 临时文件
+.superpowers/
+
+# 日志
+*.log

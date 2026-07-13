@@ -1,0 +1,1027 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EEGDataScience — 心流恢复分析</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<div class="app-shell">
+
+    <!-- ========== 侧边栏 ========== -->
+    <aside class="sidebar">
+        <div class="sidebar-brand">
+            <span class="brand-mark"></span>
+            <span class="brand-name">EEGDataScience</span>
+        </div>
+
+        <nav class="sidebar-nav">
+            <div class="nav-group">
+                <div class="nav-group-label">分析模块</div>
+                <a class="nav-item active" data-module="flow-recovery">
+                    <span class="nav-item-text">心流恢复分析</span>
+                </a>
+                <a class="nav-item" data-module="spectrum">
+                    <span class="nav-item-text">频谱分析</span>
+                </a>
+                <a class="nav-item" data-module="erp">
+                    <span class="nav-item-text">事件相关电位</span>
+                </a>
+                <a class="nav-item" data-module="ersp">
+                    <span class="nav-item-text">ERSP 时频分析</span>
+                </a>
+                <a class="nav-item nav-item-disabled" data-module="connectivity">
+                    <span class="nav-item-text">脑连接分析</span>
+                    <span class="nav-item-tag">即将推出</span>
+                </a>
+            </div>
+
+            <div class="nav-group">
+                <div class="nav-group-label">工具</div>
+                <a class="nav-item" data-module="artifact">
+                    <span class="nav-item-text">伪迹检测</span>
+                </a>
+                <a class="nav-item" data-module="stats-viz">
+                    <span class="nav-item-text">统计可视化</span>
+                </a>
+            </div>
+
+            <div class="nav-group">
+                <div class="nav-group-label">数据</div>
+                <a class="nav-item" data-module="subjects">
+                    <span class="nav-item-text">被试管理</span>
+                </a>
+                <a class="nav-item nav-item-disabled" data-module="experiments">
+                    <span class="nav-item-text">实验记录</span>
+                    <span class="nav-item-tag">即将推出</span>
+                </a>
+                <a class="nav-item nav-item-disabled" data-module="archive">
+                    <span class="nav-item-text">数据归档</span>
+                    <span class="nav-item-tag">即将推出</span>
+                </a>
+            </div>
+
+            <div class="nav-group">
+                <div class="nav-group-label">其他</div>
+                <a class="nav-item nav-item-disabled" data-module="settings">
+                    <span class="nav-item-text">设置</span>
+                </a>
+            </div>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="footer-author">
+                <span class="footer-label">作者</span>
+                <a href="https://github.com/NoWint" target="_blank" class="footer-link">NoWint</a>
+            </div>
+        </div>
+    </aside>
+
+    <!-- ========== 主内容区 ========== -->
+    <main class="main-area">
+
+        <!-- 心流恢复分析视图 -->
+        <div class="module-view active" id="view-flow-recovery">
+
+        <!-- 模块标题栏 -->
+        <div class="module-header">
+            <div class="module-title-group">
+                <span class="module-breadcrumb">分析模块</span>
+                <h1 class="module-title">心流恢复分析</h1>
+            </div>
+            <div class="module-actions">
+                <button class="btn btn-secondary" id="btn-refresh-stats" title="刷新跨条件统计">刷新统计</button>
+                <button class="btn btn-primary" id="btn-report-full" title="生成综合报告">生成报告</button>
+            </div>
+        </div>
+
+        <!-- 左右分栏工作区 -->
+        <div class="workspace">
+
+            <!-- 左侧:配置面板 -->
+            <aside class="config-panel">
+
+                <!-- 数据来源 -->
+                <div class="config-section">
+                    <div class="config-section-label">数据来源</div>
+                    <div class="source-tabs">
+                        <button class="tab-btn active" data-tab="sample">模拟数据</button>
+                        <button class="tab-btn" data-tab="upload">上传数据</button>
+                    </div>
+
+                    <div class="tab-panel active" id="panel-sample">
+                        <div class="condition-list">
+                            <button class="cond-card active" data-condition="AtoA">
+                                <span class="cond-tag">对照</span>
+                                <span class="cond-name">A → A</span>
+                                <span class="cond-desc">同学科连续</span>
+                            </button>
+                            <button class="cond-card" data-condition="AtoB">
+                                <span class="cond-tag">文理</span>
+                                <span class="cond-name">A → B</span>
+                                <span class="cond-desc">数理 → 语言</span>
+                            </button>
+                            <button class="cond-card" data-condition="AtoC">
+                                <span class="cond-tag">理艺</span>
+                                <span class="cond-name">A → C</span>
+                                <span class="cond-desc">数理 → 艺术</span>
+                            </button>
+                            <button class="cond-card" data-condition="BtoC">
+                                <span class="cond-tag">文艺</span>
+                                <span class="cond-name">B → C</span>
+                                <span class="cond-desc">语言 → 艺术</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="tab-panel" id="panel-upload">
+                        <div class="upload-area">
+                            <div class="upload-slot">
+                                <label class="upload-label">EEG 文件 (.csv)</label>
+                                <input type="file" id="file-eeg" accept=".csv" class="upload-input">
+                                <span class="upload-hint" id="hint-eeg">未选择</span>
+                            </div>
+                            <div class="upload-slot">
+                                <label class="upload-label">事件标记 (.csv, 可选)</label>
+                                <input type="file" id="file-events" accept=".csv" class="upload-input">
+                                <span class="upload-hint" id="hint-events">未选择</span>
+                            </div>
+                            <input type="text" id="upload-condition" class="text-input" placeholder="条件名称" value="custom">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 分析参数 -->
+                <div class="config-section">
+                    <div class="config-section-label">分析参数</div>
+                    <div class="param-list">
+                        <div class="param-item">
+                            <label>带通下限 (Hz)</label>
+                            <input type="number" id="param-hp" value="1.0" step="0.5" min="0.1">
+                        </div>
+                        <div class="param-item">
+                            <label>带通上限 (Hz)</label>
+                            <input type="number" id="param-lp" value="45.0" step="1" min="10">
+                        </div>
+                        <div class="param-item">
+                            <label>陷波频率 (Hz)</label>
+                            <input type="number" id="param-notch" value="50.0" step="1">
+                        </div>
+                        <div class="param-item">
+                            <label>伪迹阈值 (μV)</label>
+                            <input type="number" id="param-artifact" value="100.0" step="10">
+                        </div>
+                        <div class="param-item">
+                            <label>分析窗口 (s)</label>
+                            <input type="number" id="param-window" value="2.0" step="0.5" min="0.5">
+                        </div>
+                        <div class="param-item">
+                            <label>重叠比例</label>
+                            <input type="number" id="param-overlap" value="0.5" step="0.1" min="0" max="0.9">
+                        </div>
+                        <div class="param-item">
+                            <label>恢复容差 (%)</label>
+                            <input type="number" id="param-tolerance" value="5" step="1" min="1" max="20">
+                        </div>
+                        <div class="param-item">
+                            <label>达标窗口 (s)</label>
+                            <input type="number" id="param-recovery-win" value="30" step="5" min="10">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 操作按钮 -->
+                <div class="config-actions">
+                    <button class="btn btn-primary btn-block" id="btn-run-sample">运行分析</button>
+                    <button class="btn btn-secondary btn-block" id="btn-upload" style="display:none;">上传并分析</button>
+                    <button class="btn btn-ghost btn-block" id="btn-report-single">生成当前条件报告</button>
+                </div>
+
+            </aside>
+
+            <!-- 右侧:结果区 -->
+            <section class="result-area">
+
+                <!-- 结果状态提示(初始) -->
+                <div class="result-empty" id="result-empty">
+                    <div class="empty-icon"></div>
+                    <p class="empty-text">选择实验条件并点击「运行分析」</p>
+                    <p class="empty-hint">系统将生成模拟 EEG 数据并运行完整分析流水线</p>
+                </div>
+
+                <!-- 结果内容(分析后显示) -->
+                <div class="result-content" id="result-content" style="display:none;">
+
+                    <!-- 条件标识 -->
+                    <div class="result-header">
+                        <span class="result-badge" id="result-condition-badge">—</span>
+                    </div>
+
+                    <!-- 指标卡片 -->
+                    <div class="metric-row">
+                        <div class="metric-card">
+                            <span class="metric-label">恢复时长</span>
+                            <div class="metric-value-row">
+                                <span class="metric-value" id="metric-recovery">—</span>
+                                <span class="metric-unit">秒</span>
+                            </div>
+                        </div>
+                        <div class="metric-card">
+                            <span class="metric-label">伪迹占比</span>
+                            <div class="metric-value-row">
+                                <span class="metric-value" id="metric-artifact">—</span>
+                                <span class="metric-unit">%</span>
+                            </div>
+                        </div>
+                        <div class="metric-card">
+                            <span class="metric-label">数据时长</span>
+                            <div class="metric-value-row">
+                                <span class="metric-value" id="metric-duration">—</span>
+                                <span class="metric-unit">分钟</span>
+                            </div>
+                        </div>
+                        <div class="metric-card">
+                            <span class="metric-label">采样点数</span>
+                            <div class="metric-value-row">
+                                <span class="metric-value" id="metric-samples">—</span>
+                                <span class="metric-unit">点</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 时序曲线图 -->
+                    <div class="chart-block">
+                        <div class="block-header">
+                            <div>
+                                <h3 class="block-title">心流稳态 — 跌落 — 恢复 时序演化</h3>
+                                <p class="block-desc">各 EEG 指标归一化至心流稳态均值（=1.0），阴影带为±5%恢复阈值区间。</p>
+                            </div>
+                        </div>
+                        <div class="chart-container">
+                            <canvas id="chart-timeseries"></canvas>
+                        </div>
+                        <div class="legend-row" id="indicator-legend"></div>
+                    </div>
+
+                    <!-- 恢复时长明细 -->
+                    <div class="chart-block">
+                        <div class="block-header">
+                            <div>
+                                <h3 class="block-title">各指标恢复时长明细</h3>
+                                <p class="block-desc">6 项 EEG 指标分别的恢复达标时间，综合恢复时长取最慢指标。</p>
+                            </div>
+                        </div>
+                        <div class="chart-container chart-small">
+                            <canvas id="chart-recovery-bar"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- 衰减幅度热图 -->
+                    <div class="chart-block">
+                        <div class="block-header">
+                            <div>
+                                <h3 class="block-title">切换期衰减幅度</h3>
+                                <p class="block-desc">心流核心指标取跌落幅度（正值=衰减），认知损耗指标取升高幅度。</p>
+                            </div>
+                        </div>
+                        <div class="heatmap" id="attenuation-heatmap"></div>
+                    </div>
+
+                    <!-- 跨条件统计 -->
+                    <div class="chart-block" id="stats-block">
+                        <div class="block-header">
+                            <div>
+                                <h3 class="block-title">跨条件统计比较</h3>
+                                <p class="block-desc">配对 t 检验（对照 vs 实验组）与重复测量 ANOVA。需至少 2 个条件。</p>
+                            </div>
+                        </div>
+                        <div class="stats-charts">
+                            <div class="chart-container chart-small">
+                                <canvas id="chart-stats-recovery"></canvas>
+                            </div>
+                            <div class="chart-container chart-small">
+                                <canvas id="chart-stats-attenuation"></canvas>
+                            </div>
+                        </div>
+                        <div class="stats-table-wrap" id="stats-table-wrap"></div>
+                    </div>
+
+                </div>
+
+            </section>
+
+        </div>
+
+        </div>
+
+        <!-- 频谱分析视图 -->
+        <div class="module-view" id="view-spectrum">
+            <div class="module-header">
+                <div class="module-title-group">
+                    <span class="module-breadcrumb">分析模块</span>
+                    <h1 class="module-title">频谱分析</h1>
+                </div>
+                <div class="module-actions">
+                    <button class="btn btn-primary" id="spectrum-run">运行分析</button>
+                </div>
+            </div>
+            <div class="workspace">
+                <!-- 左侧配置面板 -->
+                <aside class="config-panel">
+                    <div class="config-section">
+                        <div class="config-section-label">数据来源</div>
+                        <div class="source-tabs">
+                            <button class="tab-btn active" data-stab="sample">模拟数据</button>
+                            <button class="tab-btn" data-stab="upload">上传数据</button>
+                        </div>
+                        <div class="tab-panel active" id="spectrum-panel-sample">
+                            <div class="condition-list">
+                                <button class="cond-card active" data-scondition="AtoA">
+                                    <span class="cond-tag">对照</span>
+                                    <span class="cond-name">A → A</span>
+                                </button>
+                                <button class="cond-card" data-scondition="AtoB">
+                                    <span class="cond-tag">文理</span>
+                                    <span class="cond-name">A → B</span>
+                                </button>
+                                <button class="cond-card" data-scondition="AtoC">
+                                    <span class="cond-tag">理艺</span>
+                                    <span class="cond-name">A → C</span>
+                                </button>
+                                <button class="cond-card" data-scondition="BtoC">
+                                    <span class="cond-tag">文艺</span>
+                                    <span class="cond-name">B → C</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="tab-panel" id="spectrum-panel-upload">
+                            <div class="upload-area">
+                                <div class="upload-slot">
+                                    <label class="upload-label">EEG 文件 (.csv)</label>
+                                    <input type="file" id="spectrum-file" accept=".csv" class="upload-input">
+                                    <span class="upload-hint" id="spectrum-file-hint">未选择</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="config-section">
+                        <div class="config-section-label">分析参数</div>
+                        <div class="param-list">
+                            <div class="param-item">
+                                <label>FFT 窗口</label>
+                                <input type="number" id="spectrum-nperseg" value="1024" step="256" min="256">
+                            </div>
+                            <div class="param-item">
+                                <label>重叠比例</label>
+                                <input type="number" id="spectrum-overlap" value="0.5" step="0.1" min="0" max="0.9">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="config-actions">
+                        <button class="btn btn-primary btn-block" id="spectrum-run-sample">运行频谱分析</button>
+                        <button class="btn btn-secondary btn-block" id="spectrum-run-upload" style="display:none;">上传并分析</button>
+                    </div>
+                </aside>
+                <!-- 右侧结果区 -->
+                <section class="result-area">
+                    <div class="result-empty" id="spectrum-empty">
+                        <div class="empty-icon"></div>
+                        <p class="empty-text">选择条件并运行频谱分析</p>
+                    </div>
+                    <div class="result-content" id="spectrum-content" style="display:none;">
+                        <div class="chart-block">
+                            <div class="block-header">
+                                <div>
+                                    <h3 class="block-title">功率谱密度 (PSD)</h3>
+                                    <p class="block-desc">Welch 法估计的多通道平均功率谱</p>
+                                </div>
+                            </div>
+                            <div class="chart-container">
+                                <canvas id="chart-psd"></canvas>
+                            </div>
+                        </div>
+                        <div class="chart-block">
+                            <div class="block-header">
+                                <div>
+                                    <h3 class="block-title">频段能量对比</h3>
+                                    <p class="block-desc">各频段相对功率百分比</p>
+                                </div>
+                            </div>
+                            <div class="chart-container chart-small">
+                                <canvas id="chart-bands"></canvas>
+                            </div>
+                        </div>
+                        <div class="chart-block">
+                            <div class="block-header">
+                                <div>
+                                    <h3 class="block-title">时频图 (Spectrogram)</h3>
+                                    <p class="block-desc">短时傅里叶变换，颜色表示功率 (dB)</p>
+                                </div>
+                            </div>
+                            <div class="chart-container">
+                                <canvas id="chart-spectrogram"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <!-- 事件相关电位视图 -->
+        <div class="module-view" id="view-erp">
+            <div class="module-header">
+                <div class="module-title-group">
+                    <span class="module-breadcrumb">分析模块</span>
+                    <h1 class="module-title">事件相关电位</h1>
+                </div>
+                <div class="module-actions">
+                    <button class="btn btn-primary" id="erp-run-header">运行样例分析</button>
+                </div>
+            </div>
+            <div class="workspace">
+                <aside class="config-panel">
+                    <div class="config-section">
+                        <div class="config-section-label">数据来源</div>
+                        <div class="source-tabs">
+                            <button class="tab-btn active" data-etab="sample">模拟数据</button>
+                            <button class="tab-btn" data-etab="upload">上传数据</button>
+                        </div>
+                        <div class="tab-panel active" id="erp-panel-sample">
+                            <div class="param-list">
+                                <div class="param-item">
+                                    <label>条件</label>
+                                    <select id="erp-condition" class="text-input" style="width:130px;">
+                                        <option value="AtoA">A→A (对照)</option>
+                                        <option value="AtoB">A→B (文理)</option>
+                                        <option value="AtoC">A→C (理艺)</option>
+                                        <option value="BtoC">B→C (文艺)</option>
+                                    </select>
+                                </div>
+                                <div class="param-item">
+                                    <label>锚定事件</label>
+                                    <select id="erp-event-id" class="text-input" style="width:130px;">
+                                        <option value="X0" selected>X0 (切换触发)</option>
+                                        <option value="F0">F0 (心流稳态)</option>
+                                        <option value="F1">F1 (心流跌落)</option>
+                                        <option value="F2">F2 (恢复开始)</option>
+                                        <option value="R0">R0 (恢复达标)</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="tab-panel" id="erp-panel-upload">
+                            <div class="upload-area">
+                                <div class="upload-slot">
+                                    <label class="upload-label">EEG 文件 (.csv)</label>
+                                    <input type="file" id="erp-file-eeg" accept=".csv" class="upload-input">
+                                    <span class="upload-hint" id="erp-hint-eeg">未选择</span>
+                                </div>
+                                <div class="upload-slot">
+                                    <label class="upload-label">事件标记 (.csv)</label>
+                                    <input type="file" id="erp-file-events" accept=".csv" class="upload-input">
+                                    <span class="upload-hint" id="erp-hint-events">未选择</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="config-actions">
+                        <button class="btn btn-primary btn-block" id="erp-run-sample">运行样例分析</button>
+                        <button class="btn btn-secondary btn-block" id="erp-run-upload" style="display:none;">上传并分析</button>
+                    </div>
+                </aside>
+                <section class="result-area">
+                    <div class="result-empty" id="erp-empty">
+                        <div class="empty-icon"></div>
+                        <p class="empty-text">选择条件与锚定事件后运行 ERP 分析</p>
+                        <p class="empty-hint">将生成 Fp1/Fp2/Fpz 三通道平均 ERP 波形</p>
+                    </div>
+                    <div class="result-content" id="erp-content" style="display:none;">
+                        <div class="result-tabs" id="erp-tabs">
+                            <button class="result-tab active" data-ertab="waveform">ERP 波形</button>
+                            <button class="result-tab" data-ertab="components">成分识别</button>
+                            <button class="result-tab" data-ertab="diff">差值波对比</button>
+                        </div>
+                        <div class="tab-panel-block active" data-ertab-panel="waveform">
+                            <div class="chart-block">
+                                <div class="block-header">
+                                    <div>
+                                        <h3 class="block-title">ERP 平均波形</h3>
+                                        <p class="block-desc">三通道 (Fp1/Fp2/Fpz) 锚定事件后的平均电位，标注 N100 与 P300</p>
+                                    </div>
+                                </div>
+                                <div class="chart-container">
+                                    <canvas id="chart-erp-waveform"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="tab-panel-block" data-ertab-panel="components" style="display:none;">
+                            <div class="chart-block">
+                                <div class="block-header">
+                                    <div>
+                                        <h3 class="block-title">ERP 成分识别</h3>
+                                        <p class="block-desc">基于峰值检测自动识别典型成分</p>
+                                    </div>
+                                </div>
+                                <div class="stats-table-wrap" id="erp-components-table">
+                                    <p class="block-desc">运行分析后显示</p>
+                                </div>
+                                <p class="block-desc" id="erp-components-note" style="margin-top:12px;"></p>
+                            </div>
+                        </div>
+                        <div class="tab-panel-block" data-ertab-panel="diff" style="display:none;">
+                            <div class="chart-block">
+                                <div class="block-header">
+                                    <div>
+                                        <h3 class="block-title">差值波对比</h3>
+                                        <p class="block-desc">选择两个条件计算差值波形 (条件1 − 条件2)</p>
+                                    </div>
+                                </div>
+                                <div class="param-list" style="flex-direction:row;gap:12px;margin-bottom:12px;flex-wrap:wrap;">
+                                    <div class="param-item">
+                                        <label>条件 1</label>
+                                        <select id="erp-diff-c1" class="text-input" style="width:130px;">
+                                            <option value="AtoA">A→A</option>
+                                            <option value="AtoB" selected>A→B</option>
+                                            <option value="AtoC">A→C</option>
+                                            <option value="BtoC">B→C</option>
+                                        </select>
+                                    </div>
+                                    <div class="param-item">
+                                        <label>条件 2</label>
+                                        <select id="erp-diff-c2" class="text-input" style="width:130px;">
+                                            <option value="AtoA" selected>A→A</option>
+                                            <option value="AtoB">A→B</option>
+                                            <option value="AtoC">A→C</option>
+                                            <option value="BtoC">B→C</option>
+                                        </select>
+                                    </div>
+                                    <button class="btn btn-secondary" id="erp-run-diff">计算差值波</button>
+                                </div>
+                                <div class="chart-container">
+                                    <canvas id="chart-erp-diff"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <!-- ERSP 时频分析视图 -->
+        <div class="module-view" id="view-ersp">
+            <div class="module-header">
+                <div class="module-title-group">
+                    <span class="module-breadcrumb">分析模块</span>
+                    <h1 class="module-title">ERSP 时频分析</h1>
+                </div>
+                <div class="module-actions">
+                    <button class="btn btn-primary" id="ersp-run-header">运行样例分析</button>
+                </div>
+            </div>
+            <div class="workspace">
+                <aside class="config-panel">
+                    <div class="config-section">
+                        <div class="config-section-label">数据来源</div>
+                        <div class="source-tabs">
+                            <button class="tab-btn active" data-rtab="sample">模拟数据</button>
+                            <button class="tab-btn" data-rtab="upload">上传数据</button>
+                        </div>
+                        <div class="tab-panel active" id="ersp-panel-sample">
+                            <div class="param-list">
+                                <div class="param-item">
+                                    <label>条件</label>
+                                    <select id="ersp-condition" class="text-input" style="width:130px;">
+                                        <option value="AtoA">A→A (对照)</option>
+                                        <option value="AtoB">A→B (文理)</option>
+                                        <option value="AtoC">A→C (理艺)</option>
+                                        <option value="BtoC">B→C (文艺)</option>
+                                    </select>
+                                </div>
+                                <div class="param-item">
+                                    <label>锚定事件</label>
+                                    <select id="ersp-event-id" class="text-input" style="width:130px;">
+                                        <option value="X0" selected>X0 (切换触发)</option>
+                                        <option value="F0">F0 (心流稳态)</option>
+                                        <option value="F1">F1 (心流跌落)</option>
+                                        <option value="F2">F2 (恢复开始)</option>
+                                        <option value="R0">R0 (恢复达标)</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="tab-panel" id="ersp-panel-upload">
+                            <div class="upload-area">
+                                <div class="upload-slot">
+                                    <label class="upload-label">EEG 文件 (.csv)</label>
+                                    <input type="file" id="ersp-file-eeg" accept=".csv" class="upload-input">
+                                    <span class="upload-hint" id="ersp-hint-eeg">未选择</span>
+                                </div>
+                                <div class="upload-slot">
+                                    <label class="upload-label">事件标记 (.csv)</label>
+                                    <input type="file" id="ersp-file-events" accept=".csv" class="upload-input">
+                                    <span class="upload-hint" id="ersp-hint-events">未选择</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="config-actions">
+                        <button class="btn btn-primary btn-block" id="ersp-run-sample">运行样例分析</button>
+                        <button class="btn btn-secondary btn-block" id="ersp-run-upload" style="display:none;">上传并分析</button>
+                    </div>
+                </aside>
+                <section class="result-area">
+                    <div class="result-empty" id="ersp-empty">
+                        <div class="empty-icon"></div>
+                        <p class="empty-text">选择条件后运行 ERSP 时频分析</p>
+                        <p class="empty-hint">将生成 ERSP/ERD/ERS/PAC/ITPC 多视角时频特征</p>
+                    </div>
+                    <div class="result-content" id="ersp-content" style="display:none;">
+                        <div class="result-tabs" id="ersp-tabs">
+                            <button class="result-tab active" data-rrtab="ersp">ERSP 时频图</button>
+                            <button class="result-tab" data-rrtab="erd">ERD/ERS</button>
+                            <button class="result-tab" data-rrtab="pac">PAC 耦合</button>
+                            <button class="result-tab" data-rrtab="itpc">ITPC</button>
+                        </div>
+                        <div class="tab-panel-block active" data-rrtab-panel="ersp">
+                            <div class="chart-block">
+                                <div class="block-header">
+                                    <div>
+                                        <h3 class="block-title">ERSP 事件相关谱扰动</h3>
+                                        <p class="block-desc">时间×频率矩阵，颜色表示功率变化 (dB)，蓝=抑制 红=增强</p>
+                                    </div>
+                                </div>
+                                <div class="canvas-heatmap-wrap">
+                                    <canvas id="canvas-ersp" width="800" height="320"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="tab-panel-block" data-rrtab-panel="erd" style="display:none;">
+                            <div class="chart-block">
+                                <div class="block-header">
+                                    <div>
+                                        <h3 class="block-title">ERD/ERS 频段占比</h3>
+                                        <p class="block-desc">各频段事件相关去同步化(ERD)/同步化(ERS)的相对占比 (%)</p>
+                                    </div>
+                                </div>
+                                <div class="chart-container chart-small">
+                                    <canvas id="chart-erd-ers"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="tab-panel-block" data-rrtab-panel="pac" style="display:none;">
+                            <div class="chart-block">
+                                <div class="block-header">
+                                    <div>
+                                        <h3 class="block-title">PAC 调制指数</h3>
+                                        <p class="block-desc">相位-振幅耦合强度 (MI) 各频段对比</p>
+                                    </div>
+                                </div>
+                                <div class="chart-container chart-small">
+                                    <canvas id="chart-pac-mi"></canvas>
+                                </div>
+                            </div>
+                            <div class="chart-block">
+                                <div class="block-header">
+                                    <div>
+                                        <h3 class="block-title">相位-振幅分布</h3>
+                                        <p class="block-desc">低频相位 bin 对应的高频振幅均值</p>
+                                    </div>
+                                </div>
+                                <div class="chart-container chart-small">
+                                    <canvas id="chart-pac-dist"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="tab-panel-block" data-rrtab-panel="itpc" style="display:none;">
+                            <div class="chart-block">
+                                <div class="block-header">
+                                    <div>
+                                        <h3 class="block-title">ITPC 跨试次相位一致性</h3>
+                                        <p class="block-desc">时间×频率矩阵，值域 0-1，红=高一致性</p>
+                                    </div>
+                                </div>
+                                <div class="canvas-heatmap-wrap">
+                                    <canvas id="canvas-itpc" width="800" height="320"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <!-- 伪迹检测视图 -->
+        <div class="module-view" id="view-artifact">
+            <div class="module-header">
+                <div class="module-title-group">
+                    <span class="module-breadcrumb">工具</span>
+                    <h1 class="module-title">伪迹检测</h1>
+                </div>
+                <div class="module-actions">
+                    <button class="btn btn-primary" id="artifact-run-header">运行检测</button>
+                </div>
+            </div>
+            <div class="workspace">
+                <aside class="config-panel">
+                    <div class="config-section">
+                        <div class="config-section-label">数据来源</div>
+                        <div class="source-tabs">
+                            <button class="tab-btn active" data-atab="sample">模拟数据</button>
+                            <button class="tab-btn" data-atab="upload">上传数据</button>
+                        </div>
+                        <div class="tab-panel active" id="artifact-panel-sample">
+                            <div class="param-list">
+                                <div class="param-item">
+                                    <label>条件</label>
+                                    <select id="artifact-condition" class="text-input" style="width:130px;">
+                                        <option value="AtoA">A→A (对照)</option>
+                                        <option value="AtoB">A→B (文理)</option>
+                                        <option value="AtoC">A→C (理艺)</option>
+                                        <option value="BtoC">B→C (文艺)</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="tab-panel" id="artifact-panel-upload">
+                            <div class="upload-area">
+                                <div class="upload-slot">
+                                    <label class="upload-label">EEG 文件 (.csv)</label>
+                                    <input type="file" id="artifact-file-eeg" accept=".csv" class="upload-input">
+                                    <span class="upload-hint" id="artifact-hint-eeg">未选择</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="config-actions">
+                        <button class="btn btn-primary btn-block" id="artifact-run-sample">运行检测</button>
+                        <button class="btn btn-secondary btn-block" id="artifact-run-upload" style="display:none;">上传并检测</button>
+                    </div>
+                </aside>
+                <section class="result-area">
+                    <div class="result-empty" id="artifact-empty">
+                        <div class="empty-icon"></div>
+                        <p class="empty-text">选择条件后运行伪迹检测</p>
+                        <p class="empty-hint">将给出综合质量评分及多维度检测结果</p>
+                    </div>
+                    <div class="result-content" id="artifact-content" style="display:none;">
+                        <div class="quality-score-row" id="artifact-quality-row">
+                            <div class="quality-score-card">
+                                <span class="quality-score-label">质量评分</span>
+                                <div class="quality-score-value-row">
+                                    <span class="quality-score-value" id="quality-score">—</span>
+                                    <span class="quality-score-grade" id="quality-grade">—</span>
+                                </div>
+                            </div>
+                            <div class="quality-factors-card">
+                                <span class="quality-score-label">评分因素</span>
+                                <div class="quality-factors-list" id="quality-factors">
+                                    <p class="block-desc">运行后显示</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="result-tabs" id="artifact-tabs">
+                            <button class="result-tab active" data-arttab="stats">检测统计</button>
+                            <button class="result-tab" data-arttab="ica">ICA 成分</button>
+                            <button class="result-tab" data-arttab="signal">信号特征</button>
+                        </div>
+                        <div class="tab-panel-block active" data-arttab-panel="stats">
+                            <div class="chart-block">
+                                <div class="block-header">
+                                    <div>
+                                        <h3 class="block-title">检测方法对比</h3>
+                                        <p class="block-desc">阈值法 vs Z-score 法 检测出的伪迹比例与段数</p>
+                                    </div>
+                                </div>
+                                <div class="chart-container chart-small">
+                                    <canvas id="chart-artifact-methods"></canvas>
+                                </div>
+                            </div>
+                            <div class="chart-block">
+                                <div class="block-header">
+                                    <div>
+                                        <h3 class="block-title">检测明细</h3>
+                                        <p class="block-desc">伪迹比例与段数汇总</p>
+                                    </div>
+                                </div>
+                                <div class="stats-table-wrap" id="artifact-stats-table">
+                                    <p class="block-desc">运行后显示</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="tab-panel-block" data-arttab-panel="ica" style="display:none;">
+                            <div class="chart-block">
+                                <div class="block-header">
+                                    <div>
+                                        <h3 class="block-title">ICA 成分分类</h3>
+                                        <p class="block-desc">自动识别眼电/肌电/心电/工频等伪迹成分</p>
+                                    </div>
+                                </div>
+                                <div class="stats-table-wrap" id="ica-table-wrap">
+                                    <p class="block-desc">运行后显示</p>
+                                </div>
+                            </div>
+                            <div class="chart-block">
+                                <div class="block-header">
+                                    <div>
+                                        <h3 class="block-title">成分功率分布</h3>
+                                        <p class="block-desc">各 ICA 成分相对功率占比</p>
+                                    </div>
+                                </div>
+                                <div class="chart-container chart-small">
+                                    <canvas id="chart-ica-power"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="tab-panel-block" data-arttab-panel="signal" style="display:none;">
+                            <div class="chart-block">
+                                <div class="block-header">
+                                    <div>
+                                        <h3 class="block-title">通道信号特征</h3>
+                                        <p class="block-desc">各通道 peak/rms/variance/kurtosis/skewness/snr_db</p>
+                                    </div>
+                                </div>
+                                <div class="stats-table-wrap" id="signal-stats-table">
+                                    <p class="block-desc">运行后显示</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <!-- 统计可视化视图 -->
+        <div class="module-view" id="view-stats-viz">
+            <div class="module-header">
+                <div class="module-title-group">
+                    <span class="module-breadcrumb">工具</span>
+                    <h1 class="module-title">统计可视化</h1>
+                </div>
+                <div class="module-actions">
+                    <button class="btn btn-secondary" id="stats-viz-refresh-header">刷新数据</button>
+                    <button class="btn btn-primary" id="stats-viz-export-header">导出 CSV</button>
+                </div>
+            </div>
+            <div class="workspace">
+                <aside class="config-panel">
+                    <div class="config-section">
+                        <div class="config-section-label">数据操作</div>
+                        <p class="block-desc" style="margin-bottom:8px;">从已分析结果中读取汇总数据</p>
+                        <div class="config-actions" style="border-top:none;padding-top:0;">
+                            <button class="btn btn-primary btn-block" id="stats-viz-refresh">刷新数据</button>
+                            <button class="btn btn-secondary btn-block" id="stats-viz-export">导出 CSV</button>
+                        </div>
+                    </div>
+                    <div class="config-section">
+                        <div class="config-section-label">地形图指标</div>
+                        <div class="param-list">
+                            <div class="param-item">
+                                <label>指标</label>
+                                <select id="topomap-indicator" class="text-input" style="width:130px;">
+                                    <option value="recovery_time">恢复时长</option>
+                                    <option value="alpha_rel">Alpha 能量</option>
+                                    <option value="theta_alpha_ratio">Theta/Alpha</option>
+                                    <option value="cog_load">认知负载</option>
+                                </select>
+                            </div>
+                            <div class="param-item">
+                                <label>条件</label>
+                                <select id="topomap-condition" class="text-input" style="width:130px;">
+                                    <option value="AtoA">A→A</option>
+                                    <option value="AtoB">A→B</option>
+                                    <option value="AtoC">A→C</option>
+                                    <option value="BtoC">B→C</option>
+                                </select>
+                            </div>
+                            <button class="btn btn-secondary btn-block" id="topomap-render" style="margin-top:8px;">渲染地形图</button>
+                        </div>
+                    </div>
+                </aside>
+                <section class="result-area">
+                    <div class="result-empty" id="stats-viz-empty">
+                        <div class="empty-icon"></div>
+                        <p class="empty-text">点击「刷新数据」加载已分析结果</p>
+                        <p class="empty-hint">需先在「心流恢复分析」中至少完成 1 个条件的分析</p>
+                    </div>
+                    <div class="result-content" id="stats-viz-content" style="display:none;">
+                        <div class="result-tabs" id="stats-viz-tabs">
+                            <button class="result-tab active" data-svtab="summary">汇总表</button>
+                            <button class="result-tab" data-svtab="radar">指标雷达图</button>
+                            <button class="result-tab" data-svtab="topomap">地形图</button>
+                            <button class="result-tab" data-svtab="cross">跨被试统计</button>
+                        </div>
+                        <div class="tab-panel-block active" data-svtab-panel="summary">
+                            <div class="chart-block">
+                                <div class="block-header">
+                                    <div>
+                                        <h3 class="block-title">条件汇总表</h3>
+                                        <p class="block-desc">各条件的恢复时长与衰减指标</p>
+                                    </div>
+                                </div>
+                                <div class="stats-table-wrap" id="summary-table-wrap">
+                                    <p class="block-desc">刷新后显示</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="tab-panel-block" data-svtab-panel="radar" style="display:none;">
+                            <div class="chart-block">
+                                <div class="block-header">
+                                    <div>
+                                        <h3 class="block-title">指标雷达图</h3>
+                                        <p class="block-desc">5 轴综合指标对比：恢复速度/心流稳定性/注意力恢复/认知负荷控制/信号质量</p>
+                                    </div>
+                                </div>
+                                <div class="chart-container">
+                                    <canvas id="chart-radar"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="tab-panel-block" data-svtab-panel="topomap" style="display:none;">
+                            <div class="chart-block">
+                                <div class="block-header">
+                                    <div>
+                                        <h3 class="block-title">头皮地形图</h3>
+                                        <p class="block-desc">3 通道 (Fp1/Fp2/Fpz) 球面插值，颜色映射指标值</p>
+                                    </div>
+                                </div>
+                                <div class="canvas-heatmap-wrap" style="display:flex;justify-content:center;">
+                                    <canvas id="canvas-topomap" width="480" height="480"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="tab-panel-block" data-svtab-panel="cross" style="display:none;">
+                            <div class="chart-block">
+                                <div class="block-header">
+                                    <div>
+                                        <h3 class="block-title">跨被试统计</h3>
+                                        <p class="block-desc">多被试数据时显示均值±95%CI 柱状图</p>
+                                    </div>
+                                </div>
+                                <div class="chart-container chart-small">
+                                    <canvas id="chart-cross-subject"></canvas>
+                                </div>
+                                <div class="stats-table-wrap" id="cross-stats-table" style="margin-top:12px;">
+                                    <p class="block-desc">单被试模式不显示跨被试统计</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <!-- 被试管理视图 -->
+        <div class="module-view" id="view-subjects">
+            <div class="module-header">
+                <div class="module-title-group">
+                    <span class="module-breadcrumb">数据</span>
+                    <h1 class="module-title">被试管理</h1>
+                </div>
+                <div class="module-actions">
+                    <button class="btn btn-primary" id="subject-add-btn">添加被试</button>
+                </div>
+            </div>
+            <div class="workspace" style="flex-direction:column;">
+                <section class="result-area" style="padding:20px;">
+                    <div class="chart-block">
+                        <div class="block-header">
+                            <div>
+                                <h3 class="block-title">被试列表</h3>
+                                <p class="block-desc">点击行查看实验记录</p>
+                            </div>
+                        </div>
+                        <div class="stats-table-wrap" id="subjects-table-wrap">
+                            <p class="block-desc">加载中...</p>
+                        </div>
+                    </div>
+                    <div class="chart-block" id="subject-experiments-block" style="display:none;">
+                        <div class="block-header">
+                            <div>
+                                <h3 class="block-title" id="subject-exp-title">实验记录</h3>
+                                <p class="block-desc">该被试的所有实验会话</p>
+                            </div>
+                        </div>
+                        <div class="stats-table-wrap" id="experiments-table-wrap"></div>
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <!-- 加载状态 -->
+        <div class="loading-overlay" id="loading" style="display:none;">
+            <div class="loading-card">
+                <div class="loading-spinner"></div>
+                <span class="loading-text">正在分析...</span>
+            </div>
+        </div>
+
+    </main>
+
+</div>
+
+<script src="/static/js/app.js"></script>
+</body>
+</html>
