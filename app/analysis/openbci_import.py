@@ -38,6 +38,34 @@ def _detect_openbci(filepath: Path) -> bool:
         return False
 
 
+def _detect_brainflow_csv(filepath: Path) -> bool:
+    """检测文件是否为 BrainFlow CSV 导出格式
+
+    BrainFlow CSV 特征:
+    - 无 % 头(区别于 ODF)
+    - 列名为纯数字索引(0, 1, 2, ...)
+    - 列数 >= 10(区别于普通 CSV)
+    """
+    try:
+        with open(filepath, "r", encoding="utf-8", errors="replace") as f:
+            first = f.readline().strip()
+        if first.startswith("%"):
+            return False
+        # 解析列名
+        cols = [c.strip() for c in first.split(",")]
+        if len(cols) < 10:
+            return False
+        # 所有列名必须是纯数字
+        for c in cols:
+            try:
+                int(c)
+            except ValueError:
+                return False
+        return True
+    except Exception:
+        return False
+
+
 def _parse_header(filepath: Path) -> dict:
     """解析 OpenBCI 文件头，提取元信息"""
     info = {
@@ -191,6 +219,86 @@ def load_openbci(filepath: Path) -> dict:
             'board': info['board'],
             'n_channels': data.shape[1],
             'sample_rate': int(fs),
+            'has_accelerometer': accel is not None,
+            'has_markers': markers is not None and len(markers) > 0,
+            'duration_sec': float(n_samples / fs) if fs > 0 else 0.0,
+            'n_samples': int(n_samples),
+        }
+    }
+
+
+# BrainFlow CSV 列数 → 板卡/EXG 通道数映射
+BRAINFLOW_COLUMN_MAP = {
+    24: ("cyton", 8),     # Cyton 8ch
+    28: ("daisy", 16),    # Cyton 16ch (Daisy)
+    18: ("ganglion", 4),  # Ganglion 4ch
+}
+
+
+def load_brainflow_csv(filepath: Path) -> dict:
+    """加载 BrainFlow CSV 导出文件,返回统一 dict
+
+    BrainFlow CSV 列布局(BoardShim 默认):
+    - 0..N-1: EXG 通道(N = EXG 通道数)
+    - N..N+2: Accel XYZ(3 列,如果板卡支持)
+    - ...: Other/Digital/Analog
+    - 倒数第二列: Timestamp(秒)
+    - 最后一列: Marker
+    """
+    df = pd.read_csv(filepath, dtype=np.float64)
+    values = df.values
+    n_samples, n_cols = values.shape
+
+    # 按列数判断板卡
+    board, n_exg = BRAINFLOW_COLUMN_MAP.get(n_cols, ("unknown", max(1, n_cols // 4)))
+
+    # EXG 通道(前 n_exg 列)
+    data = values[:, :n_exg]
+    channels = [f"EXG_{i}" for i in range(n_exg)]
+
+    # Accel 通道(EXG 后 3 列,如果存在)
+    accel = None
+    if n_cols >= n_exg + 3:
+        accel = values[:, n_exg:n_exg + 3]
+
+    # Timestamp(倒数第二列,秒)
+    timestamp_col = n_cols - 2
+    timestamps_sec = values[:, timestamp_col]
+    times = timestamps_sec - timestamps_sec[0] if len(timestamps_sec) > 0 else np.arange(n_samples) / 250.0
+
+    # 推断采样率
+    if len(times) > 1:
+        dt = np.median(np.diff(times))
+        fs = int(round(1.0 / dt)) if dt > 0 else 250
+    else:
+        fs = 250
+
+    # Marker(最后一列)
+    markers = None
+    marker_values = values[:, -1]
+    non_zero = np.where(marker_values != 0)[0]
+    if len(non_zero) > 0:
+        markers = [
+            Marker(
+                timestamp=float(times[i]),
+                value=int(marker_values[i]),
+                label=f"marker_{int(marker_values[i])}"
+            )
+            for i in non_zero
+        ]
+
+    return {
+        'data': data.astype(np.float64),
+        'fs': fs,
+        'channels': channels,
+        'times': times,
+        'accel': accel,
+        'markers': markers,
+        'metadata': {
+            'format': 'brainflow_csv',
+            'board': board,
+            'n_channels': n_exg,
+            'sample_rate': fs,
             'has_accelerometer': accel is not None,
             'has_markers': markers is not None and len(markers) > 0,
             'duration_sec': float(n_samples / fs) if fs > 0 else 0.0,
