@@ -36,7 +36,9 @@ class AcquisitionManager:
         self._poll_thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
         self._clients: List[Callable] = []  # WebSocket 推送回调
-        self._buffer: deque = deque(maxlen=5000)  # 环形缓冲(约 20 秒 @250Hz)
+        # 环形缓冲: 存 (ch_idx, sample) 元组, 8 通道交错
+        # maxlen = 5000 samples/ch * 8 ch = 40000 (约 20 秒 @250Hz)
+        self._buffer: deque = deque(maxlen=40000)
         self._last_focus_time: float = 0.0
         self._focus_cache: Dict = {'avg': 0.0, 'stability': 0.0}
         self._band_powers_cache: Dict = {}
