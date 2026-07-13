@@ -116,6 +116,13 @@ def preprocess(data, fs, lp=45.0, hp=1.0, notch=50.0, artifact_threshold=100.0):
 
     # 带通滤波 (1-45 Hz)
     nyq = fs / 2.0
+    # 守护: 滤波参数不能超过奈奎斯特频率(如 emg 预设 lp=250 用于 250Hz 数据时)
+    if lp >= nyq:
+        lp = nyq * 0.9
+    if hp >= nyq:
+        hp = nyq * 0.1
+    if hp >= lp:
+        hp = lp * 0.1
     b, a = signal.butter(4, [hp / nyq, lp / nyq], btype='band')
     for ch in range(n_channels):
         processed[:, ch] = signal.filtfilt(b, a, processed[:, ch])
