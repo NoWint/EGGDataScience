@@ -4,3 +4,4 @@ numpy>=2.0.0
 pandas>=2.0.0
 scipy>=1.17.0
 python-multipart>=0.0.20
+brainflow>=5.0.0
