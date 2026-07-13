@@ -47,3 +47,44 @@ def test_acquisition_board_info():
     assert 'n_exg' in info
     assert info['n_exg'] > 0
     assert info['fs'] > 0
+
+
+def test_manager_start_stop():
+    """测试 AcquisitionManager 启动停止"""
+    from app.realtime.manager import AcquisitionManager
+
+    manager = AcquisitionManager()
+
+    # 初始状态
+    status = manager.get_status()
+    assert status['state'] == 'IDLE'
+
+    # 启动 Synthetic Board
+    manager.start('synthetic', {})
+    assert manager.get_status()['state'] == 'STREAMING'
+
+    # 等待数据
+    time.sleep(0.5)
+
+    # 停止
+    manager.stop()
+    assert manager.get_status()['state'] == 'IDLE'
+
+
+def test_manager_status_fields():
+    """测试状态返回字段"""
+    from app.realtime.manager import AcquisitionManager
+
+    manager = AcquisitionManager()
+    manager.start('synthetic', {})
+    time.sleep(0.3)
+
+    status = manager.get_status()
+    assert 'state' in status
+    assert 'board_id' in status
+    assert 'board_name' in status
+    assert 'fs' in status
+    assert 'channels' in status
+    assert 'elapsed_sec' in status
+
+    manager.stop()
