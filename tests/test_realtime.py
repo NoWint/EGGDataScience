@@ -88,3 +88,83 @@ def test_manager_status_fields():
     assert 'elapsed_sec' in status
 
     manager.stop()
+
+
+# ========== Task 3: REST + WebSocket 端点测试 ==========
+
+@pytest.fixture
+def client():
+    """TestClient + 确保全局 manager 清洁"""
+    from app.server import app
+    from app.realtime.manager import get_manager
+    from fastapi.testclient import TestClient
+
+    # 测试前确保 manager 停止
+    mgr = get_manager()
+    mgr.stop()
+
+    c = TestClient(app)
+    yield c
+
+    # 测试后清理
+    mgr.stop()
+
+
+def test_realtime_status_endpoint(client):
+    """测试 GET /api/realtime/status"""
+    resp = client.get("/api/realtime/status")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data['state'] == 'IDLE'
+
+
+def test_realtime_start_stop_endpoints(client):
+    """测试 POST /api/realtime/start + stop"""
+    # 启动
+    resp = client.post("/api/realtime/start", json={
+        "board_id": "synthetic",
+        "params": {},
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data['ok'] is True
+    assert data['board_name']  # 有板名
+    assert data['fs'] > 0
+
+    # 等待数据
+    time.sleep(0.5)
+
+    # 状态应为 STREAMING
+    status = client.get("/api/realtime/status").json()
+    assert status['state'] == 'STREAMING'
+
+    # 停止
+    resp = client.post("/api/realtime/stop")
+    assert resp.status_code == 200
+    assert resp.json()['ok'] is True
+
+    # 状态应为 IDLE
+    status = client.get("/api/realtime/status").json()
+    assert status['state'] == 'IDLE'
+
+
+def test_realtime_websocket(client):
+    """测试 WebSocket 数据推送"""
+    # 先启动采集
+    client.post("/api/realtime/start", json={"board_id": "synthetic", "params": {}})
+    time.sleep(0.3)
+
+    # 连接 WebSocket
+    try:
+        with client.websocket_connect("/ws/realtime") as ws:
+            # 接收数据帧(可能先收到 ping,循环直到收到 data)
+            for _ in range(10):
+                data = ws.receive_json()
+                if data.get('type') == 'data':
+                    assert 'data' in data
+                    assert 'channels' in data
+                    assert 'fs' in data
+                    return
+            pytest.fail("未收到 data 类型帧")
+    finally:
+        client.post("/api/realtime/stop")

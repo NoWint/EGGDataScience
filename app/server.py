@@ -12,7 +12,7 @@ from typing import Optional, List, Dict
 
 import numpy as np
 import pandas as pd
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, WebSocket
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel
@@ -30,6 +30,7 @@ from app.routers.erp import router as erp_router
 from app.routers.ersp import router as ersp_router
 from app.routers.stats_viz import router as stats_viz_router
 from app.routers.openbci import router as openbci_router
+from app.routers.realtime import router as realtime_router, realtime_websocket_endpoint
 
 
 # ========== 安全 JSON 序列化 ==========
@@ -81,6 +82,14 @@ app.include_router(erp_router)
 app.include_router(ersp_router)
 app.include_router(stats_viz_router)
 app.include_router(openbci_router)
+app.include_router(realtime_router)
+
+
+# ========== WebSocket 端点 ==========
+@app.websocket("/ws/realtime")
+async def ws_realtime(websocket: WebSocket):
+    """实时采集 WebSocket 端点"""
+    await realtime_websocket_endpoint(websocket)
 
 BASE_DIR = Path(__file__).parent
 STATIC_DIR = BASE_DIR / "static"
