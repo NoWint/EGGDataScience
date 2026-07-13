@@ -56,6 +56,13 @@
             </div>
 
             <div class="nav-group">
+                <div class="nav-group-label">实时</div>
+                <a class="nav-item" data-module="realtime">
+                    <span class="nav-item-text">实时采集</span>
+                </a>
+            </div>
+
+            <div class="nav-group">
                 <div class="nav-group-label">数据</div>
                 <a class="nav-item" data-module="openbci">
                     <span class="nav-item-text">OpenBCI 导入</span>
@@ -1192,11 +1199,60 @@
             </div>
         </div>
 
+        <!-- ========== 实时采集 ========== -->
+        <div class="module-view" id="view-realtime">
+            <header class="module-header">
+                <h1 class="module-title">实时脑电采集</h1>
+                <div class="module-actions">
+                    <select id="rt-board-select" class="board-select">
+                        <option value="synthetic">合成板(演示用,无需硬件)</option>
+                        <option value="cyton">Cyton (8通道)</option>
+                        <option value="daisy">Daisy (16通道)</option>
+                        <option value="ganglion">Ganglion (4通道)</option>
+                    </select>
+                    <button id="rt-start-btn" class="btn btn-primary">开始采集</button>
+                    <button id="rt-stop-btn" class="btn btn-danger" disabled>停止采集</button>
+                </div>
+            </header>
+
+            <div class="realtime-status-bar">
+                <span>状态: <strong id="rt-state">空闲</strong></span>
+                <span id="rt-status"></span>
+            </div>
+
+            <div class="realtime-canvas-container">
+                <canvas id="realtime-canvas"></canvas>
+            </div>
+
+            <div class="realtime-stats">
+                <div class="stat-card">
+                    <div class="stat-label">实时专注度</div>
+                    <div class="stat-value" id="rt-focus-avg">--</div>
+                    <div class="stat-hint" id="rt-focus-hint">等待数据</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">稳定性</div>
+                    <div class="stat-value" id="rt-focus-stability">--</div>
+                </div>
+                <div class="stat-card band-powers-card">
+                    <div class="stat-label">频带功率</div>
+                    <div class="bp-grid">
+                        <span>δ: <strong id="rt-bp-delta">--</strong></span>
+                        <span>θ: <strong id="rt-bp-theta">--</strong></span>
+                        <span>α: <strong id="rt-bp-alpha">--</strong></span>
+                        <span>β: <strong id="rt-bp-beta">--</strong></span>
+                        <span>γ: <strong id="rt-bp-gamma">--</strong></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
     </main>
 
 </div>
 
 <script src="/static/js/topomap.js"></script>
+<script src="/static/js/realtime.js"></script>
 <script src="/static/js/app.js"></script>
 </body>
 </html>

@@ -47,6 +47,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initButtons();
     initFileInputs();
     initSidebarNav();
+    if (window.initRealtime) initRealtime();
 });
 
 // ---------- 标签页切换 ----------

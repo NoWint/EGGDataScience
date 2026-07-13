@@ -1179,3 +1179,23 @@ select.text-input {
 .filter-advanced { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
 .filter-advanced label { font-size: 12px; display: flex; justify-content: space-between; }
 .filter-advanced input { width: 60px; }
+
+
+/* === 实时采集模块 === */
+.board-select { padding: 6px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; }
+.realtime-status-bar { padding: 12px 16px; background: #f9fafb; border-radius: 8px; margin-bottom: 16px; display: flex; gap: 16px; align-items: center; font-size: 14px; }
+.realtime-canvas-container { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; margin-bottom: 16px; }
+#realtime-canvas { width: 100%; height: 400px; display: block; }
+.realtime-stats { display: flex; gap: 16px; flex-wrap: wrap; }
+.realtime-stats .stat-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; min-width: 160px; flex: 1; }
+.realtime-stats .stat-label { font-size: 12px; color: #6b7280; margin-bottom: 8px; }
+.realtime-stats .stat-value { font-size: 28px; font-weight: 700; color: #1f2937; }
+.realtime-stats .stat-hint { font-size: 13px; margin-top: 4px; }
+.band-powers-card { min-width: 220px; }
+.bp-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; font-size: 14px; }
+.bp-grid span { color: #6b7280; }
+.bp-grid strong { color: #1f2937; font-size: 15px; }
+.btn-primary { background: #4B3FE3; color: #fff; border: none; padding: 8px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; }
+.btn-primary:disabled { background: #d1d5db; cursor: not-allowed; }
+.btn-danger { background: #ef4444; color: #fff; border: none; padding: 8px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; }
+.btn-danger:disabled { background: #d1d5db; cursor: not-allowed; }
