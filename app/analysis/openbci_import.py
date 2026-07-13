@@ -41,27 +41,38 @@ def _detect_openbci(filepath: Path) -> bool:
 def _detect_brainflow_csv(filepath: Path) -> bool:
     """检测文件是否为 BrainFlow CSV 导出格式
 
-    BrainFlow CSV 特征:
-    - 无 % 头(区别于 ODF)
-    - 列名为纯数字索引(0, 1, 2, ...)
+    支持两种 BrainFlow CSV 变体:
+    1. 有表头(列名为纯数字索引 0,1,2,...),逗号分隔
+    2. 无表头(Tab 分隔的 RAW 数据,如 BrainFlow-RAW_*.csv)
+
+    识别条件:
+    - 不以 % 开头(区别于 ODF)
     - 列数 >= 10(区别于普通 CSV)
+    - 首行全部为数字(浮点或整数)
     """
     try:
         with open(filepath, "r", encoding="utf-8", errors="replace") as f:
             first = f.readline().strip()
         if first.startswith("%"):
             return False
-        # 解析列名
-        cols = [c.strip() for c in first.split(",")]
-        if len(cols) < 10:
-            return False
-        # 所有列名必须是纯数字
-        for c in cols:
-            try:
-                int(c)
-            except ValueError:
-                return False
-        return True
+
+        # 尝试 Tab 和逗号两种分隔符
+        for sep in ('\t', ','):
+            cols = [c.strip() for c in first.split(sep)]
+            if len(cols) < 10:
+                continue
+            # 检查是否全部为数字(支持浮点和整数)
+            all_numeric = True
+            for c in cols:
+                try:
+                    float(c)
+                except ValueError:
+                    all_numeric = False
+                    break
+            if all_numeric:
+                return True
+
+        return False
     except Exception:
         return False
 
@@ -228,40 +239,89 @@ def load_openbci(filepath: Path) -> dict:
 
 
 # BrainFlow CSV 列数 → 板卡/EXG 通道数映射
+# 支持两种导出格式:
+# - 有表头(逗号分隔): 24=Cyton, 28=Daisy, 18=Ganglion
+# - 无表头(Tab 分隔 RAW): 15=Ganglion, 22=Cyton, 30=Daisy
 BRAINFLOW_COLUMN_MAP = {
-    24: ("cyton", 8),     # Cyton 8ch
-    28: ("daisy", 16),    # Cyton 16ch (Daisy)
-    18: ("ganglion", 4),  # Ganglion 4ch
+    24: ("cyton", 8),     # Cyton 8ch (有表头)
+    28: ("daisy", 16),    # Cyton 16ch (Daisy, 有表头)
+    18: ("ganglion", 4),  # Ganglion 4ch (有表头)
+    15: ("ganglion", 4),  # Ganglion 4ch (RAW Tab 分隔: idx + 4 EXG + 3 accel + 5 other + ts + marker)
+    22: ("cyton", 8),     # Cyton 8ch (RAW Tab 分隔)
+    30: ("daisy", 16),    # Daisy 16ch (RAW Tab 分隔)
 }
+
+
+def _detect_separator(filepath: Path) -> str:
+    """检测 BrainFlow CSV 文件的分隔符(Tab 或逗号)"""
+    try:
+        with open(filepath, "r", encoding="utf-8", errors="replace") as f:
+            first = f.readline()
+        if '\t' in first:
+            return '\t'
+        return ','
+    except Exception:
+        return ','
+
+
+def _is_brainflow_header_row(row_values: np.ndarray) -> bool:
+    """检测首行是否为 BrainFlow 数字表头 (0, 1, 2, ..., n-1)"""
+    if len(row_values) < 2:
+        return False
+    try:
+        for i, v in enumerate(row_values):
+            if float(v) != float(i):
+                return False
+        return True
+    except (ValueError, TypeError):
+        return False
 
 
 def load_brainflow_csv(filepath: Path) -> dict:
     """加载 BrainFlow CSV 导出文件,返回统一 dict
 
-    BrainFlow CSV 列布局(BoardShim 默认):
-    - 0..N-1: EXG 通道(N = EXG 通道数)
-    - N..N+2: Accel XYZ(3 列,如果板卡支持)
-    - ...: Other/Digital/Analog
-    - 倒数第二列: Timestamp(秒)
+    支持两种格式:
+    1. 有表头(列名为纯数字 0,1,2,...),逗号分隔
+    2. 无表头(Tab 分隔 RAW,如 BrainFlow-RAW_*.csv)
+
+    BrainFlow CSV 列布局(两种格式相同):
+    - 第 0 列: Sample Index
+    - 第 1..N 列: EXG 通道(N = EXG 通道数)
+    - 第 N+1..N+3 列: Accel XYZ
+    - ...: Other
+    - 倒数第二列: Timestamp(Unix 秒)
     - 最后一列: Marker
     """
-    df = pd.read_csv(filepath, dtype=np.float64)
-    values = df.values
+    sep = _detect_separator(filepath)
+
+    # 读取文件(先按无表头读取,后续检测是否需要跳过首行)
+    # na_values: 处理可能存在的非数字值(如 '-', 空字符串, BrainFlow 导出末尾截断)
+    # dropna: 丢弃含 NaN 的行(通常是文件末尾不完整行)
+    df = pd.read_csv(filepath, sep=sep, header=None, na_values=['-', ''])
+    df = df.dropna()
+    values = df.values.astype(np.float64)
     n_samples, n_cols = values.shape
+
+    # 检测并跳过数字表头行 (0, 1, 2, ...)
+    if n_samples > 1 and _is_brainflow_header_row(values[0]):
+        values = values[1:]
+        n_samples = values.shape[0]
 
     # 按列数判断板卡
     board, n_exg = BRAINFLOW_COLUMN_MAP.get(n_cols, ("unknown", max(1, n_cols // 4)))
 
-    # EXG 通道(前 n_exg 列)
-    data = values[:, :n_exg]
+    # EXG 通道: 列 1 到 n_exg+1 (列 0 是 Sample Index)
+    exg_start = 1
+    data = values[:, exg_start:exg_start + n_exg]
     channels = [f"EXG_{i}" for i in range(n_exg)]
 
-    # Accel 通道(EXG 后 3 列,如果存在)
+    # Accel 通道: EXG 后 3 列(跳过 Sample Index 偏移)
     accel = None
-    if n_cols >= n_exg + 3:
-        accel = values[:, n_exg:n_exg + 3]
+    accel_start = exg_start + n_exg
+    if n_cols >= accel_start + 3:
+        accel = values[:, accel_start:accel_start + 3]
 
-    # Timestamp(倒数第二列,秒)
+    # Timestamp(倒数第二列,Unix 秒)
     timestamp_col = n_cols - 2
     timestamps_sec = values[:, timestamp_col]
     times = timestamps_sec - timestamps_sec[0] if len(timestamps_sec) > 0 else np.arange(n_samples) / 250.0
