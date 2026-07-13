@@ -553,7 +553,7 @@ def run_full_pipeline(data, fs, events_df, config=None, preprocess_config=None):
             viz_data[col] = features[col].values.tolist()
     viz_data['timestamp'] = ts.tolist()
 
-    return {
+    result = {
         'features': features.to_dict('list'),
         'baseline_means': baseline_means,
         'recovery_time': overall_recovery,
@@ -570,3 +570,64 @@ def run_full_pipeline(data, fs, events_df, config=None, preprocess_config=None):
         },
         'config': config,
     }
+
+    # === 新增:模块借鉴字段 ===
+    # 频带功率(用 spectrum 模块,返回各频段绝对/相对功率等)
+    try:
+        from .spectrum import compute_band_powers as spectrum_band_powers
+        bp_result = spectrum_band_powers(processed, fs)
+        result['band_powers'] = {
+            k: dict(v) if isinstance(v, dict) else v
+            for k, v in bp_result.items()
+        }
+    except Exception:
+        result['band_powers'] = {}
+
+    # 时频谱图(多通道平均 STFT)
+    try:
+        from .spectrum import compute_spectrogram
+        spec_result = compute_spectrogram(processed, fs)
+        result['spectrogram_data'] = {
+            'freqs': list(spec_result.get('freqs', [])),
+            'times': list(spec_result.get('times', [])),
+            'sxx': spec_result.get('spectrogram', []),
+        }
+    except Exception:
+        result['spectrogram_data'] = {}
+
+    # 头皮地形图(用各通道 alpha 频带功率)
+    try:
+        from .stats_viz import compute_topomap_data
+        from scipy import signal as scipy_signal
+        # 取前 8 通道(或实际通道数)的 alpha 功率
+        n_ch = min(8, processed.shape[1]) if processed.ndim > 1 else 1
+        channel_names_8ch = ['Fp1', 'Fp2', 'C3', 'C4', 'Pz', 'O1', 'O2', 'Fz'][:n_ch]
+
+        alpha_values = []
+        for ch_idx in range(n_ch):
+            ch_data = processed[:, ch_idx] if processed.ndim > 1 else processed
+            freqs, psd = scipy_signal.welch(ch_data, fs, nperseg=min(1024, len(ch_data)))
+            alpha_mask = (freqs >= 8) & (freqs < 13)
+            alpha_power = float(np.mean(psd[alpha_mask])) if alpha_mask.any() else 0.0
+            alpha_values.append(alpha_power)
+
+        topo_result = compute_topomap_data(alpha_values, channel_names_8ch)
+        result['topomap_data'] = {
+            'grid_x': topo_result['grid_x'],
+            'grid_y': topo_result['grid_y'],
+            'grid_z': topo_result['grid_z'],
+            'channels': topo_result['channels'],
+            'values': topo_result['values'],
+            'band': 'alpha',
+        }
+    except Exception:
+        result['topomap_data'] = {}
+
+    # Focus 专注度
+    try:
+        from .focus import compute_focus_scores
+        result['focus_scores'] = compute_focus_scores(processed, fs)
+    except Exception:
+        result['focus_scores'] = {'scores': [], 'avg': 0.0, 'stability': 0.0}
+
+    return result

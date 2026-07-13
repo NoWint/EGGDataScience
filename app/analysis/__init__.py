@@ -11,6 +11,7 @@ from .openbci_import import (
     _detect_openbci, load_openbci, openbci_info,
     _detect_brainflow_csv, load_brainflow_csv, Marker,
 )
+from .focus import compute_focus_scores
 
 __all__ = [
     'load_eeg', 'load_eeg_full', 'load_events', 'preprocess',
@@ -21,4 +22,5 @@ __all__ = [
     'BANDS',
     '_detect_openbci', 'load_openbci', 'openbci_info',
     '_detect_brainflow_csv', 'load_brainflow_csv', 'Marker',
+    'compute_focus_scores',
 ]
