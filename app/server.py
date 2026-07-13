@@ -4,6 +4,7 @@ EEGDataScience — FastAPI 服务端
 """
 import os
 import json
+import math
 import tempfile
 import shutil
 from pathlib import Path
@@ -28,8 +29,49 @@ from app.routers.artifact import router as artifact_router
 from app.routers.erp import router as erp_router
 from app.routers.ersp import router as ersp_router
 from app.routers.stats_viz import router as stats_viz_router
+from app.routers.openbci import router as openbci_router
 
-app = FastAPI(title="EEGDataScience", version="2.0.0")
+
+# ========== 安全 JSON 序列化 ==========
+def _to_jsonable(obj):
+    """递归转换 numpy 类型为 JSON 可序列化, 并过滤 NaN/Inf 为 None"""
+    if isinstance(obj, dict):
+        return {k: _to_jsonable(v) for k, v in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [_to_jsonable(v) for v in obj]
+    elif isinstance(obj, (np.integer,)):
+        return int(obj)
+    elif isinstance(obj, (np.floating,)):
+        v = float(obj)
+        return v if not (math.isnan(v) or math.isinf(v)) else None
+    elif isinstance(obj, np.ndarray):
+        return [_to_jsonable(v) for v in obj]
+    elif isinstance(obj, bool):
+        return obj
+    elif isinstance(obj, int):
+        return obj
+    elif isinstance(obj, float):
+        return obj if not (math.isnan(obj) or math.isinf(obj)) else None
+    elif obj is None or isinstance(obj, str):
+        return obj
+    else:
+        return str(obj)
+
+
+class SafeJSONResponse(JSONResponse):
+    """自定义 JSON 响应: 过滤 NaN/Inf, 保证返回有效 JSON"""
+    def render(self, content) -> bytes:
+        cleaned = _to_jsonable(content)
+        return json.dumps(
+            cleaned,
+            ensure_ascii=False,
+            allow_nan=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+
+
+app = FastAPI(title="EEGDataScience", version="2.0.0",
+              default_response_class=SafeJSONResponse)
 
 # 注册模块路由
 app.include_router(subjects_router)
@@ -38,6 +80,7 @@ app.include_router(artifact_router)
 app.include_router(erp_router)
 app.include_router(ersp_router)
 app.include_router(stats_viz_router)
+app.include_router(openbci_router)
 
 BASE_DIR = Path(__file__).parent
 STATIC_DIR = BASE_DIR / "static"
@@ -94,6 +137,10 @@ async def generate_sample(req: SampleRequest):
 
 
 # ========== API: 上传数据 ==========
+# 允许上传的 EEG 文件后缀: CSV 与 OpenBCI GUI ODF 默认导出的 TXT
+ALLOWED_EXTS = ('.csv', '.txt')
+
+
 @app.post("/api/upload")
 async def upload_data(
     eeg_file: UploadFile = File(...),
@@ -101,8 +148,8 @@ async def upload_data(
     condition: str = Form("custom"),
 ):
     """上传 EEG CSV + 事件标记 CSV"""
-    if not eeg_file.filename.endswith('.csv'):
-        raise HTTPException(400, "EEG文件需为CSV格式")
+    if not eeg_file.filename.lower().endswith(ALLOWED_EXTS):
+        raise HTTPException(400, "EEG文件需为 CSV 或 TXT 格式")
 
     eeg_path = UPLOAD_DIR / f"eeg_{condition}.csv"
     with open(eeg_path, "wb") as f:
@@ -427,23 +474,7 @@ async def generate_report(condition: Optional[str] = None):
 
 
 # ========== 工具函数 ==========
-def _to_jsonable(obj):
-    """递归转换 numpy 类型为 JSON 可序列化"""
-    if isinstance(obj, dict):
-        return {k: _to_jsonable(v) for k, v in obj.items()}
-    elif isinstance(obj, (list, tuple)):
-        return [_to_jsonable(v) for v in obj]
-    elif isinstance(obj, (np.integer,)):
-        return int(obj)
-    elif isinstance(obj, (np.floating,)):
-        v = float(obj)
-        return v if not (np.isnan(v) or np.isinf(v)) else None
-    elif isinstance(obj, np.ndarray):
-        return [_to_jsonable(v) for v in obj]
-    elif obj is None or isinstance(obj, (str, int, float, bool)):
-        return obj
-    else:
-        return str(obj)
+# _to_jsonable 已在文件顶部定义, 供 SafeJSONResponse 使用
 
 
 # ========== 静态文件 ==========
