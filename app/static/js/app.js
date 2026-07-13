@@ -24,6 +24,20 @@ const CONDITION_LABELS = {
     'BtoC': 'B→C (文艺)',
 };
 
+// ========== 安全 fetch helper ==========
+async function fetchJSON(url, options) {
+    const resp = await fetch(url, options);
+    if (!resp.ok) {
+        let msg = `HTTP ${resp.status}`;
+        try {
+            const errData = await resp.json();
+            msg = errData.detail || errData.error || msg;
+        } catch (e) { /* 非 JSON 响应 */ }
+        throw new Error(msg);
+    }
+    return resp.json();
+}
+
 // ==========================================================
 // 初始化
 // ==========================================================
@@ -148,12 +162,11 @@ function getParams() {
 async function runSample() {
     showLoading(true);
     try {
-        const resp = await fetch('/api/sample', {
+        const data = await fetchJSON('/api/sample', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ condition: selectedCondition, fs: 250 }),
         });
-        const data = await resp.json();
         if (data.error) throw new Error(data.error);
         analyzedConditions.add(selectedCondition);
         renderResults(data);
@@ -230,6 +243,11 @@ function renderResults(data) {
     renderRecoveryBar(data);
     renderAttenuationHeatmap(data);
     renderLegend();
+
+    // 新增:模块借鉴渲染
+    if (data.band_powers) renderSpectrum(data);
+    if (data.topomap_data) renderTopomapModule(data.topomap_data);
+    if (data.focus_scores) renderFocus(data.focus_scores);
 }
 
 // ==========================================================
@@ -1083,7 +1101,7 @@ async function loadSubjectExperiments(subjectId, subjectCode) {
 async function deleteSubject(id) {
     if (!confirm('确认删除该被试？相关实验记录也将被删除。')) return;
     try {
-        await fetch(`/api/subjects/${id}`, { method: 'DELETE' });
+        await fetchJSON(`/api/subjects/${id}`, { method: 'DELETE' });
         showToast('已删除');
         loadSubjects();
         document.getElementById('subject-experiments-block').style.display = 'none';
@@ -1101,11 +1119,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!code) return;
             const age = prompt('年龄 (可留空):') || null;
             const gender = prompt('性别 M/F (可留空):') || null;
-            fetch('/api/subjects', {
+            fetchJSON('/api/subjects', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ code, age: age ? parseInt(age) : null, gender })
-            }).then(r => r.json()).then(() => {
+            }).then(() => {
                 showToast('已添加');
                 loadSubjects();
             }).catch(err => alert('添加失败: ' + err.message));
@@ -1154,12 +1172,12 @@ async function runSpectrumSample() {
     try {
         const nperseg = parseInt(document.getElementById('spectrum-nperseg').value);
         const overlap = parseFloat(document.getElementById('spectrum-overlap').value);
-        const resp = await fetch('/api/spectrum/sample', {
+        const data = await fetchJSON('/api/spectrum/sample', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ condition: spectrumCondition, fs: 250, nperseg, overlap })
         });
-        const data = await resp.json();
+        if (data.error) throw new Error(data.error);
         document.getElementById('spectrum-empty').style.display = 'none';
         document.getElementById('spectrum-content').style.display = 'flex';
         renderSpectrumCharts(data);
@@ -1180,8 +1198,8 @@ async function runSpectrumUpload() {
         formData.append('fs', 250);
         formData.append('nperseg', document.getElementById('spectrum-nperseg').value);
         formData.append('overlap', document.getElementById('spectrum-overlap').value);
-        const resp = await fetch('/api/spectrum/analyze', { method: 'POST', body: formData });
-        const data = await resp.json();
+        const data = await fetchJSON('/api/spectrum/analyze', { method: 'POST', body: formData });
+        if (data.error) throw new Error(data.error);
         document.getElementById('spectrum-empty').style.display = 'none';
         document.getElementById('spectrum-content').style.display = 'flex';
         renderSpectrumCharts(data);
@@ -1342,12 +1360,11 @@ document.addEventListener('DOMContentLoaded', () => {
 async function runERPSample() {
     showLoading(true);
     try {
-        const resp = await fetch('/api/erp/sample', {
+        const data = await fetchJSON('/api/erp/sample', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ condition: erpCondition, fs: 250, event_id: erpEventId })
         });
-        const data = await resp.json();
         if (data.error) throw new Error(data.error);
         erpLastData = data;
         document.getElementById('erp-empty').style.display = 'none';
@@ -1605,12 +1622,11 @@ document.addEventListener('DOMContentLoaded', () => {
 async function runERSPSample() {
     showLoading(true);
     try {
-        const resp = await fetch('/api/ersp/sample', {
+        const data = await fetchJSON('/api/ersp/sample', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ condition: erspCondition, fs: 250, event_id: erspEventId })
         });
-        const data = await resp.json();
         if (data.error) throw new Error(data.error);
         document.getElementById('ersp-empty').style.display = 'none';
         document.getElementById('ersp-content').style.display = 'flex';
@@ -1776,12 +1792,11 @@ document.addEventListener('DOMContentLoaded', () => {
 async function runArtifactSample() {
     showLoading(true);
     try {
-        const resp = await fetch('/api/artifact/sample', {
+        const data = await fetchJSON('/api/artifact/sample', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ condition: artifactCondition, fs: 250 })
         });
-        const data = await resp.json();
         if (data.error) throw new Error(data.error);
         document.getElementById('artifact-empty').style.display = 'none';
         document.getElementById('artifact-content').style.display = 'flex';
@@ -2086,7 +2101,7 @@ async function renderTopomapFromConfig() {
         });
         const data = await resp.json();
         if (data.error) throw new Error(data.error);
-        renderTopomap('canvas-topomap', data, values, `${CONDITION_LABELS[condition] || condition} · ${indicator}`);
+        renderTopomapOnCanvas('canvas-topomap', data, values, `${CONDITION_LABELS[condition] || condition} · ${indicator}`);
     } catch (err) {
         alert('地形图渲染失败: ' + err.message);
     } finally {
@@ -2094,7 +2109,7 @@ async function renderTopomapFromConfig() {
     }
 }
 
-function renderTopomap(canvasId, gridData, values, title) {
+function renderTopomapOnCanvas(canvasId, gridData, values, title) {
     const canvas = document.getElementById(canvasId);
     const ctx = canvas.getContext('2d');
     const w = canvas.width, h = canvas.height;
@@ -2410,3 +2425,451 @@ function interpolateColor(t, scale) {
         return `rgb(${r},${g},${b})`;
     }
 }
+
+// ==========================================================
+// OpenBCI 导入视图
+// ==========================================================
+let obciData = null;
+let obciChart = null;
+
+document.addEventListener('DOMContentLoaded', () => {
+    const fileInput = document.getElementById('obci-file');
+    const detectBtn = document.getElementById('obci-detect');
+    const saveBtn = document.getElementById('obci-save');
+    const analyzeBtn = document.getElementById('obci-analyze');
+
+    fileInput?.addEventListener('change', (e) => {
+        const f = e.target.files[0];
+        document.getElementById('obci-file-hint').textContent = f ? f.name : '未选择';
+        detectBtn.disabled = !f;
+        analyzeBtn.disabled = true;
+        obciData = null;
+    });
+
+    detectBtn?.addEventListener('click', detectOpenBCI);
+    saveBtn?.addEventListener('click', saveOpenBCI);
+    analyzeBtn?.addEventListener('click', analyzeOpenBCI);
+});
+
+async function detectOpenBCI() {
+    const file = document.getElementById('obci-file').files[0];
+    if (!file) { showToast('请先选择文件'); return; }
+
+    showLoading(true);
+    try {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('convert_uv', document.getElementById('obci-convert-uv').value === '1');
+        formData.append('gain', document.getElementById('obci-gain').value || '0');
+
+        const resp = await fetch('/api/openbci/convert', { method: 'POST', body: formData });
+        const data = await resp.json();
+        if (data.detail) throw new Error(data.detail);
+
+        obciData = data;
+        document.getElementById('obci-empty').style.display = 'none';
+        document.getElementById('obci-content').style.display = 'flex';
+        document.getElementById('obci-analyze').disabled = false;
+
+        showOpenBCIInfo(data);
+        renderOpenBCIPreview(data);
+        renderOpenBCIStats(data);
+
+        showToast(`${data.board.toUpperCase()} · ${data.n_channels}ch · ${data.sample_rate}Hz · ${data.duration_sec}s`);
+    } catch (err) {
+        showToast('检测失败: ' + err.message);
+    } finally {
+        showLoading(false);
+    }
+}
+
+function showOpenBCIInfo(data) {
+    const section = document.getElementById('obci-info-section');
+    const list = document.getElementById('obci-info-list');
+    section.style.display = 'block';
+
+    const items = [
+        ['板卡', data.board?.toUpperCase() || '—'],
+        ['通道数', data.n_channels],
+        ['采样率', data.sample_rate + ' Hz'],
+        ['样本数', data.n_samples?.toLocaleString()],
+        ['时长', data.duration_sec + ' 秒'],
+        ['加速计', data.has_accelerometer ? '有' : '无'],
+        ['模拟输入', data.has_analog ? '有' : '无'],
+    ];
+
+    list.innerHTML = items.map(([label, value]) =>
+        `<div class="param-item">
+            <label>${label}</label>
+            <span style="color:#737373;font-size:13px;padding-top:4px;display:block;">${value}</span>
+        </div>`
+    ).join('');
+}
+
+function renderOpenBCIPreview(data) {
+    const canvas = document.getElementById('chart-obci-preview');
+    const ctx = canvas.getContext('2d');
+    if (obciChart) obciChart.destroy();
+
+    const p = data.preview;
+    const times = p.times || [];
+    const channels = p.channels || {};
+    const chNames = Object.keys(channels);
+
+    const displayChs = chNames.slice(0, 4);
+    const step = Math.max(1, Math.floor(times.length / 800));
+    const labels = times.filter((_, i) => i % step === 0);
+
+    const palette = ['#4B3FE3', '#1DC981', '#22A5F7', '#F87454'];
+    const datasets = displayChs.map((ch, i) => ({
+        label: ch,
+        data: channels[ch].filter((_, j) => j % step === 0),
+        borderColor: palette[i % palette.length],
+        backgroundColor: 'transparent',
+        borderWidth: 1.5,
+        pointRadius: 0,
+        tension: 0.2,
+    }));
+
+    obciChart = new Chart(ctx, {
+        type: 'line',
+        data: { labels, datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { position: 'bottom', labels: { color: '#404040', font: { size: 11 }, boxWidth: 12, padding: 12 } },
+                tooltip: {
+                    backgroundColor: '#FFFFFF', titleColor: '#171717', bodyColor: '#404040',
+                    borderColor: 'rgba(115,115,115,0.18)', borderWidth: 1, cornerRadius: 8,
+                },
+            },
+            scales: {
+                x: { title: { display: true, text: '时间 (s)', color: '#737373' },
+                    grid: { color: 'rgba(115,115,115,0.08)' }, ticks: { color: '#737373', font: { size: 11 } } },
+                y: { title: { display: true, text: 'Raw ADC', color: '#737373' },
+                    grid: { color: 'rgba(115,115,115,0.08)' }, ticks: { color: '#737373', font: { size: 11 } } },
+            },
+        },
+    });
+
+    document.getElementById('obci-preview-info').textContent =
+        `显示 ${displayChs.length}/${chNames.length} 个通道的前 ${times.length} 个样本`;
+}
+
+function renderOpenBCIStats(data) {
+    const wrap = document.getElementById('obci-stats-table');
+    const p = data.preview;
+    const channels = p.channels || {};
+    let html = '<table class="stats-table"><thead><tr><th>通道</th><th>均值</th><th>范围</th><th>标准差</th></tr></thead><tbody>';
+    for (const [name, values] of Object.entries(channels)) {
+        const arr = values || [];
+        if (!arr.length) continue;
+        const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
+        const min = Math.min(...arr);
+        const max = Math.max(...arr);
+        const std = Math.sqrt(arr.reduce((s, v) => s + (v - mean) ** 2, 0) / arr.length);
+        html += `<tr>
+            <td>${name}</td>
+            <td class="mono">${mean.toFixed(1)}</td>
+            <td class="mono">[${min.toFixed(0)}, ${max.toFixed(0)}]</td>
+            <td class="mono">${std.toFixed(1)}</td>
+        </tr>`;
+    }
+    html += '</tbody></table>';
+    wrap.innerHTML = html;
+}
+
+async function saveOpenBCI() {
+    const file = document.getElementById('obci-file').files[0];
+    if (!file) { showToast('请先选择文件'); return; }
+    showLoading(true);
+    try {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('condition', document.getElementById('obci-condition').value || 'openbci');
+        formData.append('convert_uv', document.getElementById('obci-convert-uv').value === '1');
+        formData.append('gain', document.getElementById('obci-gain').value || '0');
+        const resp = await fetch('/api/openbci/save', { method: 'POST', body: formData });
+        const data = await resp.json();
+        if (data.detail) throw new Error(data.detail);
+        showToast(`已保存: ${data.filename} (${data.n_samples} 样本, ${data.n_channels}ch)`);
+    } catch (err) {
+        showToast('保存失败: ' + err.message);
+    } finally {
+        showLoading(false);
+    }
+}
+
+async function analyzeOpenBCI() {
+    const file = document.getElementById('obci-file').files[0];
+    if (!file) { showToast('请先选择文件'); return; }
+    showLoading(true);
+    try {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('condition', document.getElementById('obci-condition').value || 'openbci');
+        formData.append('convert_uv', document.getElementById('obci-convert-uv').value === '1');
+        formData.append('gain', document.getElementById('obci-gain').value || '0');
+
+        const saveResp = await fetch('/api/openbci/save', { method: 'POST', body: formData });
+        const saveData = await saveResp.json();
+        if (saveData.detail) throw new Error(saveData.detail);
+
+        const params = getParams();
+        const analyzeResp = await fetch('/api/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...params, condition: saveData.condition }),
+        });
+        const analyzeData = await analyzeResp.json();
+        if (analyzeData.error) throw new Error(analyzeData.error);
+
+        // Switch to flow recovery view
+        document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+        const flowNav = document.querySelector('[data-module="flow-recovery"]');
+        if (flowNav) flowNav.classList.add('active');
+        document.querySelectorAll('.module-view').forEach(v => v.classList.remove('active'));
+        const flowView = document.getElementById('view-flow-recovery');
+        if (flowView) flowView.classList.add('active');
+
+        analyzedConditions.add(saveData.condition);
+        renderResults(analyzeData);
+        document.getElementById('result-empty').style.display = 'none';
+        document.getElementById('result-content').style.display = 'flex';
+        document.getElementById('stats-block').style.display = 'block';
+
+        showToast(`分析完成 · ${saveData.filename} · 恢复时长: ${analyzeData.recovery_time?.toFixed(1) || 'N/A'}s`);
+    } catch (err) {
+        showToast('分析失败: ' + err.message);
+    } finally {
+        showLoading(false);
+    }
+}
+
+// ==========================================================
+// 模块借鉴新增渲染 (频谱 / 地形图 / Focus)
+// ==========================================================
+function renderSpectrum(data) {
+    if (data.spectrogram_data && data.spectrogram_data.freqs) {
+        renderFFTChart(data.spectrogram_data);
+    }
+    if (data.band_powers) {
+        renderBandPowerChart(data.band_powers);
+    }
+    if (data.spectrogram_data && data.spectrogram_data.sxx) {
+        renderSpectrogramCanvas(data.spectrogram_data);
+    }
+}
+
+function renderBandPowerChart(bandPowers) {
+    const canvas = document.getElementById('chart-bandpower');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (charts.bandpower) charts.bandpower.destroy();
+
+    const bands = ['delta', 'theta', 'alpha', 'beta', 'gamma'];
+    const labels = ['Delta (1-4Hz)', 'Theta (4-8Hz)', 'Alpha (8-13Hz)', 'Beta (13-30Hz)', 'Gamma (30-45Hz)'];
+    const values = bands.map(b => {
+        const v = bandPowers[b];
+        if (v && typeof v === 'object' && !Array.isArray(v)) {
+            return v.rel || v.abs || 0;
+        }
+        if (Array.isArray(v)) return v[v.length - 1] || 0;
+        return v || 0;
+    });
+
+    charts.bandpower = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: '频带相对功率',
+                data: values,
+                backgroundColor: ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981'],
+            }],
+        },
+        options: {
+            responsive: true,
+            scales: { y: { beginAtZero: true } },
+        },
+    });
+}
+
+function renderFFTChart(specData) {
+    const canvas = document.getElementById('chart-fft');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (charts.fft) charts.fft.destroy();
+
+    const freqs = specData.freqs || [];
+    const sxx = specData.sxx;
+    let psdData = [];
+    if (Array.isArray(sxx) && sxx.length > 0) {
+        psdData = Array.isArray(sxx[0]) ? sxx[0] : sxx;
+    }
+
+    charts.fft = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: freqs.map(f => f.toFixed(1)),
+            datasets: [{
+                label: 'PSD',
+                data: psdData,
+                borderColor: '#4B3FE3',
+                borderWidth: 1,
+                pointRadius: 0,
+            }],
+        },
+        options: {
+            responsive: true,
+            scales: {
+                x: { title: { display: true, text: '频率 (Hz)' } },
+                y: { type: 'logarithmic', title: { display: true, text: '功率' } },
+            },
+        },
+    });
+}
+
+function renderSpectrogramCanvas(specData) {
+    const canvas = document.getElementById('chart-spectrogram');
+    if (!canvas || !specData.sxx) return;
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width || 600;
+    const H = canvas.height || 300;
+    canvas.width = W;
+    canvas.height = H;
+
+    ctx.clearRect(0, 0, W, H);
+
+    const sxx = specData.sxx;
+    const rows = sxx.length;
+    const cols = sxx[0] ? sxx[0].length : 0;
+    if (cols === 0) return;
+
+    let zMin = Infinity, zMax = -Infinity;
+    for (let i = 0; i < rows; i++) {
+        for (let j = 0; j < cols; j++) {
+            if (sxx[i][j] < zMin) zMin = sxx[i][j];
+            if (sxx[i][j] > zMax) zMax = sxx[i][j];
+        }
+    }
+    const zRange = zMax - zMin || 1;
+
+    const cellW = W / cols;
+    const cellH = H / rows;
+
+    for (let i = 0; i < rows; i++) {
+        for (let j = 0; j < cols; j++) {
+            const t = (sxx[i][j] - zMin) / zRange;
+            ctx.fillStyle = jetColor(t);
+            ctx.fillRect(j * cellW, i * cellH, cellW + 1, cellH + 1);
+        }
+    }
+}
+
+function jetColor(t) {
+    t = Math.max(0, Math.min(1, t));
+    let r, g, b;
+    if (t < 0.25) { r = 0; g = 4 * t * 255; b = 255; }
+    else if (t < 0.5) { r = 0; g = 255; b = (1 - 4 * (t - 0.25)) * 255; }
+    else if (t < 0.75) { r = 4 * (t - 0.5) * 255; g = 255; b = 0; }
+    else { r = 255; g = (1 - 4 * (t - 0.75)) * 255; b = 0; }
+    return `rgb(${Math.round(r)},${Math.round(g)},${Math.round(b)})`;
+}
+
+function renderTopomapModule(topomapData) {
+    const canvas = document.getElementById('topomap-canvas');
+    if (!canvas || !window.renderTopomap) return;
+    window.renderTopomap(canvas, topomapData);
+}
+
+function renderFocus(focusScores) {
+    const avgEl = document.getElementById('focus-avg');
+    const stabilityEl = document.getElementById('focus-stability');
+    const hintEl = document.getElementById('focus-hint');
+
+    if (avgEl) {
+        const avg = focusScores.avg || 0;
+        avgEl.textContent = avg.toFixed(2);
+
+        if (hintEl) {
+            if (avg < 0.3) {
+                hintEl.textContent = '走神';
+                hintEl.style.color = '#ef4444';
+            } else if (avg < 0.7) {
+                hintEl.textContent = '一般';
+                hintEl.style.color = '#f59e0b';
+            } else {
+                hintEl.textContent = '专注';
+                hintEl.style.color = '#10b981';
+            }
+        }
+    }
+
+    if (stabilityEl) {
+        stabilityEl.textContent = (focusScores.stability || 0).toFixed(3);
+    }
+
+    const canvas = document.getElementById('chart-focus');
+    if (!canvas || !focusScores.scores || focusScores.scores.length === 0) return;
+
+    const ctx = canvas.getContext('2d');
+    if (charts.focus) charts.focus.destroy();
+
+    charts.focus = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: focusScores.scores.map((_, i) => `窗口${i + 1}`),
+            datasets: [{
+                label: '专注度',
+                data: focusScores.scores,
+                borderColor: '#4B3FE3',
+                backgroundColor: 'rgba(75, 63, 227, 0.1)',
+                fill: true,
+                tension: 0.3,
+            }],
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: { min: 0, max: 1, title: { display: true, text: '专注度分数' } },
+            },
+        },
+    });
+}
+
+// ---------- 模块借鉴交互事件 ----------
+document.addEventListener('DOMContentLoaded', () => {
+    // 频谱 Tab 切换(如果存在 tab 按钮)
+    document.querySelectorAll('[data-spectrum-tab]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const tabName = btn.dataset.spectrumTab;
+            document.querySelectorAll('[data-spectrum-tab]').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            document.querySelectorAll('[data-spectrum-panel]').forEach(p => p.hidden = true);
+            const panel = document.querySelector(`[data-spectrum-panel="${tabName}"]`);
+            if (panel) panel.hidden = false;
+        });
+    });
+
+    // 地形图频带切换
+    document.querySelectorAll('[data-band]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('[data-band]').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+        });
+    });
+
+    // 滤波预设切换
+    document.querySelectorAll('[data-preset]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('[data-preset]').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            const preset = btn.dataset.preset;
+            const advanced = document.querySelector('.filter-advanced');
+            if (advanced) advanced.hidden = (preset !== 'custom');
+        });
+    });
+});

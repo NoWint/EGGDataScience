@@ -1144,3 +1144,38 @@ select.text-input {
         grid-template-columns: 1fr;
     }
 }
+
+/* ==========================================================
+   模块借鉴新增样式
+   ========================================================== */
+
+/* 频谱 Tab */
+.spectrum-tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+.tab-btn { padding: 6px 16px; border: 1px solid #ddd; background: #fff; cursor: pointer; border-radius: 6px; }
+.tab-btn.active { background: #4B3FE3; color: #fff; border-color: #4B3FE3; }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* 地形图 */
+.topomap-content { display: flex; gap: 24px; align-items: center; }
+#topomap-canvas { border: 1px solid #ddd; border-radius: 8px; background: #fff; }
+.topomap-bands { display: flex; gap: 8px; }
+.band-btn { padding: 4px 12px; border: 1px solid #ddd; background: #fff; cursor: pointer; border-radius: 4px; font-size: 13px; }
+.band-btn.active { background: #4B3FE3; color: #fff; }
+
+/* Focus 统计卡片 */
+.focus-stats { display: flex; gap: 16px; margin-bottom: 24px; }
+.stat-card { padding: 16px 24px; border: 1px solid #ddd; border-radius: 8px; min-width: 200px; }
+.stat-label { font-size: 13px; color: #666; margin-bottom: 4px; }
+.stat-value { font-size: 28px; font-weight: 600; }
+.stat-hint { font-size: 12px; margin-top: 4px; }
+
+/* 滤波设置面板 */
+.filter-panel { margin-top: auto; padding: 12px; border-top: 1px solid #eee; }
+.filter-header { font-size: 13px; color: #666; margin-bottom: 8px; }
+.filter-presets { display: flex; gap: 4px; flex-wrap: wrap; }
+.preset-btn { padding: 4px 10px; border: 1px solid #ddd; background: #fff; cursor: pointer; border-radius: 4px; font-size: 12px; }
+.preset-btn.active { background: #4B3FE3; color: #fff; border-color: #4B3FE3; }
+.filter-advanced { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+.filter-advanced label { font-size: 12px; display: flex; justify-content: space-between; }
+.filter-advanced input { width: 60px; }
