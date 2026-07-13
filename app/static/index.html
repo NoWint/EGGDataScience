@@ -33,6 +33,12 @@
                 <a class="nav-item" data-module="ersp">
                     <span class="nav-item-text">ERSP 时频分析</span>
                 </a>
+                <a class="nav-item" data-module="topomap">
+                    <span class="nav-item-text">头皮地形图</span>
+                </a>
+                <a class="nav-item" data-module="focus">
+                    <span class="nav-item-text">Focus 专注度</span>
+                </a>
                 <a class="nav-item nav-item-disabled" data-module="connectivity">
                     <span class="nav-item-text">脑连接分析</span>
                     <span class="nav-item-tag">即将推出</span>
@@ -51,6 +57,9 @@
 
             <div class="nav-group">
                 <div class="nav-group-label">数据</div>
+                <a class="nav-item" data-module="openbci">
+                    <span class="nav-item-text">OpenBCI 导入</span>
+                </a>
                 <a class="nav-item" data-module="subjects">
                     <span class="nav-item-text">被试管理</span>
                 </a>
@@ -71,6 +80,22 @@
                 </a>
             </div>
         </nav>
+
+        <!-- 滤波设置面板(侧边栏底部固定) -->
+        <div class="filter-panel">
+            <div class="filter-header">滤波设置</div>
+            <div class="filter-presets">
+                <button class="preset-btn active" data-preset="eeg">脑电</button>
+                <button class="preset-btn" data-preset="emg">肌电</button>
+                <button class="preset-btn" data-preset="ecg">心电</button>
+                <button class="preset-btn" data-preset="custom">自定义</button>
+            </div>
+            <div class="filter-advanced" hidden>
+                <label>HP (Hz): <input type="number" id="filter-hp" value="1.0" step="0.1"></label>
+                <label>LP (Hz): <input type="number" id="filter-lp" value="45.0" step="1.0"></label>
+                <label>陷波 (Hz): <input type="number" id="filter-notch" value="50.0" step="1.0"></label>
+            </div>
+        </div>
 
         <div class="sidebar-footer">
             <div class="footer-author">
@@ -713,6 +738,63 @@
             </div>
         </div>
 
+        <!-- 头皮地形图视图 -->
+        <div class="module-view" id="view-topomap">
+            <div class="module-header">
+                <div class="module-title-group">
+                    <span class="module-breadcrumb">分析模块</span>
+                    <h1 class="module-title">头皮地形图</h1>
+                </div>
+                <div class="module-actions topomap-bands">
+                    <button class="band-btn active" data-band="alpha">Alpha (8-13Hz)</button>
+                    <button class="band-btn" data-band="beta">Beta (13-30Hz)</button>
+                    <button class="band-btn" data-band="theta">Theta (4-8Hz)</button>
+                </div>
+            </div>
+            <div class="workspace">
+                <section class="result-area">
+                    <div class="topomap-content">
+                        <canvas id="topomap-canvas" width="400" height="400"></canvas>
+                        <div class="topomap-legend">
+                            <div class="legend-bar"></div>
+                            <div class="legend-labels">
+                                <span>低</span>
+                                <span>高</span>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <!-- Focus 专注度视图 -->
+        <div class="module-view" id="view-focus">
+            <div class="module-header">
+                <div class="module-title-group">
+                    <span class="module-breadcrumb">分析模块</span>
+                    <h1 class="module-title">Focus 专注度检测</h1>
+                </div>
+            </div>
+            <div class="workspace">
+                <section class="result-area">
+                    <div class="focus-stats">
+                        <div class="stat-card">
+                            <div class="stat-label">平均专注度</div>
+                            <div class="stat-value" id="focus-avg">--</div>
+                            <div class="stat-hint" id="focus-hint">上传数据后显示</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">稳定性</div>
+                            <div class="stat-value" id="focus-stability">--</div>
+                        </div>
+                    </div>
+                    <div class="focus-chart">
+                        <canvas id="chart-focus"></canvas>
+                    </div>
+                </section>
+            </div>
+        </div>
+
         <!-- 伪迹检测视图 -->
         <div class="module-view" id="view-artifact">
             <div class="module-header">
@@ -966,6 +1048,98 @@
                                 <div class="stats-table-wrap" id="cross-stats-table" style="margin-top:12px;">
                                     <p class="block-desc">单被试模式不显示跨被试统计</p>
                                 </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <!-- OpenBCI 导入视图 -->
+        <div class="module-view" id="view-openbci">
+            <div class="module-header">
+                <div class="module-title-group">
+                    <span class="module-breadcrumb">数据</span>
+                    <h1 class="module-title">OpenBCI 导入</h1>
+                </div>
+                <div class="module-actions">
+                    <button class="btn btn-primary" id="obci-analyze" disabled>导入并分析</button>
+                </div>
+            </div>
+            <div class="workspace">
+                <aside class="config-panel">
+                    <div class="config-section">
+                        <div class="config-section-label">上传 OpenBCI 文件</div>
+                        <div class="upload-area">
+                            <div class="upload-slot">
+                                <label class="upload-label">OpenBCI 导出文件 (.txt / .csv)</label>
+                                <input type="file" id="obci-file" accept=".txt,.csv" class="upload-input">
+                                <span class="upload-hint" id="obci-file-hint">选择由 OpenBCI_GUI 录制的数据文件</span>
+                            </div>
+                        </div>
+                        <div class="param-list">
+                            <div class="param-item">
+                                <label>ADC → μV 转换</label>
+                                <select id="obci-convert-uv" class="text-input" style="width:130px;">
+                                    <option value="0" selected>保持原始值</option>
+                                    <option value="1">转换为 μV</option>
+                                </select>
+                            </div>
+                            <div class="param-item">
+                                <label>PGA 增益</label>
+                                <select id="obci-gain" class="text-input" style="width:130px;">
+                                    <option value="0">自动 (板卡默认)</option>
+                                    <option value="1">x1</option>
+                                    <option value="2">x2</option>
+                                    <option value="4">x4</option>
+                                    <option value="6">x6</option>
+                                    <option value="8">x8</option>
+                                    <option value="12">x12</option>
+                                    <option value="24">x24</option>
+                                </select>
+                            </div>
+                            <div class="param-item">
+                                <label>导入条件名</label>
+                                <input type="text" id="obci-condition" class="text-input" value="openbci" style="width:130px;">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="config-actions">
+                        <button class="btn btn-primary btn-block" id="obci-detect" disabled>检测格式</button>
+                        <button class="btn btn-secondary btn-block" id="obci-save">保存为标准 CSV</button>
+                    </div>
+                    <div class="config-section" id="obci-info-section" style="display:none;">
+                        <div class="config-section-label">文件信息</div>
+                        <div class="param-list" id="obci-info-list"></div>
+                    </div>
+                </aside>
+                <section class="result-area">
+                    <div class="result-empty" id="obci-empty">
+                        <div class="empty-icon"></div>
+                        <p class="empty-text">上传 OpenBCI 导出的数据文件</p>
+                        <p class="empty-hint">支持 Cyton (8ch)、Daisy (16ch)、Ganglion (4ch) 三种板卡。系统自动识别格式并提取 EEG 通道。</p>
+                    </div>
+                    <div class="result-content" id="obci-content" style="display:none;">
+                        <div class="chart-block">
+                            <div class="block-header">
+                                <div>
+                                    <h3 class="block-title">波形预览 (前 10 秒)</h3>
+                                    <p class="block-desc" id="obci-preview-info">—</p>
+                                </div>
+                            </div>
+                            <div class="chart-container">
+                                <canvas id="chart-obci-preview"></canvas>
+                            </div>
+                        </div>
+                        <div class="chart-block">
+                            <div class="block-header">
+                                <div>
+                                    <h3 class="block-title">通道统计</h3>
+                                    <p class="block-desc">各通道 raw 值范围与标准差</p>
+                                </div>
+                            </div>
+                            <div class="stats-table-wrap" id="obci-stats-table">
+                                <p class="block-desc">上传并检测后显示</p>
                             </div>
                         </div>
                     </div>
