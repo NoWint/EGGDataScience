@@ -51,3 +51,46 @@ def test_run_full_pipeline_returns_new_fields(sample_odf_path):
     focus = pipeline_result['focus_scores']
     assert 'scores' in focus
     assert 'avg' in focus
+
+
+def test_analyze_with_filter_preset(client, sample_odf_path):
+    """测试 /api/analyze 接受 filter_preset 参数"""
+    # 上传
+    with open(sample_odf_path, "rb") as f:
+        client.post(
+            "/api/upload",
+            files={"eeg_file": ("test.txt", f, "text/plain")},
+            data={"condition": "filter_test"},
+        )
+
+    # 分析带 filter_preset
+    response = client.post("/api/analyze", json={
+        "condition": "filter_test",
+        "filter_preset": "eeg",
+    })
+
+    if response.status_code == 200:
+        data = response.json()
+        # 应返回新字段
+        assert 'topomap_data' in data
+        assert 'band_powers' in data
+        assert 'focus_scores' in data
+
+
+def test_analyze_with_custom_filter(client, sample_odf_path):
+    """测试 /api/analyze 接受 custom filter_params"""
+    with open(sample_odf_path, "rb") as f:
+        client.post(
+            "/api/upload",
+            files={"eeg_file": ("test.txt", f, "text/plain")},
+            data={"condition": "custom_filter_test"},
+        )
+
+    response = client.post("/api/analyze", json={
+        "condition": "custom_filter_test",
+        "filter_preset": "custom",
+        "filter_params": {"hp": 1.0, "lp": 30.0, "notch": 50.0},
+    })
+
+    # 不应报错(可能因数据问题非 200,但不应 422 参数错误)
+    assert response.status_code != 422

@@ -170,6 +170,14 @@ async def upload_data(
 
 
 # ========== API: 分析上传的数据 ==========
+# 滤波预设: 不同信号类型推荐不同通带
+FILTER_PRESETS = {
+    "eeg": {"hp": 1.0, "lp": 45.0, "notch": 50.0},
+    "emg": {"hp": 20.0, "lp": 250.0, "notch": 50.0},
+    "ecg": {"hp": 0.5, "lp": 40.0, "notch": 50.0},
+}
+
+
 class AnalyzeRequest(BaseModel):
     condition: str = "custom"
     lp: float = 45.0
@@ -181,6 +189,10 @@ class AnalyzeRequest(BaseModel):
     tolerance: float = 0.05
     recovery_window: int = 30
     preprocess_config: Optional[Dict] = None  # 可选：高级预处理配置
+    # 滤波预设: "eeg" | "emg" | "ecg" | "custom"
+    filter_preset: str = "eeg"
+    # 仅 custom 模式下生效: {"hp": float, "lp": float, "notch": float}
+    filter_params: Optional[Dict] = None
 
 
 @app.post("/api/analyze")
@@ -216,8 +228,19 @@ async def analyze_data(req: AnalyzeRequest):
             ('R0', 665.0), ('R1', 1265.0), ('Q0', 1265.0),
         ], columns=['event_id', 'timestamp'])
 
+    # 根据 filter_preset 设置滤波参数
+    # - "custom": 使用 filter_params (回退到 req 字段)
+    # - "eeg"/"emg"/"ecg": 使用对应预设覆盖 req 中的 hp/lp/notch
+    if req.filter_preset == "custom" and req.filter_params:
+        hp = req.filter_params.get("hp", req.hp)
+        lp = req.filter_params.get("lp", req.lp)
+        notch = req.filter_params.get("notch", req.notch)
+    else:
+        preset = FILTER_PRESETS.get(req.filter_preset, FILTER_PRESETS["eeg"])
+        hp, lp, notch = preset["hp"], preset["lp"], preset["notch"]
+
     config = {
-        'lp': req.lp, 'hp': req.hp, 'notch': req.notch,
+        'lp': lp, 'hp': hp, 'notch': notch,
         'artifact_threshold': req.artifact_threshold,
         'window_sec': req.window_sec, 'overlap': req.overlap,
         'tolerance': req.tolerance, 'recovery_window': req.recovery_window,
