@@ -238,17 +238,29 @@ def load_openbci(filepath: Path) -> dict:
     }
 
 
-# BrainFlow CSV 列数 → 板卡/EXG 通道数映射
+# BrainFlow CSV 列数 → (板卡, EXG 通道数, 板卡标准采样率) 映射
 # 支持两种导出格式:
 # - 有表头(逗号分隔): 24=Cyton, 28=Daisy, 18=Ganglion
 # - 无表头(Tab 分隔 RAW): 15=Ganglion, 22=Cyton, 30=Daisy
+# 板卡标准采样率(BrainFlow 文档):
+#   - cyton: 250 Hz, daisy: 125 Hz, ganglion: 200 Hz, synthetic: 250 Hz
+# 优先使用板卡标准 fs,因为 BrainFlow RAW CSV 的 Timestamp 是按包级精度
+# 记录的(多个样本共用同一时间戳),仅靠 timestamp diff 推断 fs 不可靠。
 BRAINFLOW_COLUMN_MAP = {
-    24: ("cyton", 8),     # Cyton 8ch (有表头)
-    28: ("daisy", 16),    # Cyton 16ch (Daisy, 有表头)
-    18: ("ganglion", 4),  # Ganglion 4ch (有表头)
-    15: ("ganglion", 4),  # Ganglion 4ch (RAW Tab 分隔: idx + 4 EXG + 3 accel + 5 other + ts + marker)
-    22: ("cyton", 8),     # Cyton 8ch (RAW Tab 分隔)
-    30: ("daisy", 16),    # Daisy 16ch (RAW Tab 分隔)
+    24: ("cyton", 8, 250),     # Cyton 8ch (有表头)
+    28: ("daisy", 16, 125),    # Cyton 16ch (Daisy, 有表头)
+    18: ("ganglion", 4, 200),  # Ganglion 4ch (有表头)
+    15: ("ganglion", 4, 200),  # Ganglion 4ch (RAW Tab 分隔: idx + 4 EXG + 3 accel + 5 other + ts + marker)
+    22: ("cyton", 8, 250),     # Cyton 8ch (RAW Tab 分隔)
+    30: ("daisy", 16, 125),    # Daisy 16ch (RAW Tab 分隔)
+}
+
+# 板卡名 → 标准采样率(用于 unknown 列数时的回退)
+BOARD_DEFAULT_FS = {
+    "cyton": 250,
+    "daisy": 125,
+    "ganglion": 200,
+    "synthetic": 250,
 }
 
 
@@ -307,8 +319,14 @@ def load_brainflow_csv(filepath: Path) -> dict:
         values = values[1:]
         n_samples = values.shape[0]
 
-    # 按列数判断板卡
-    board, n_exg = BRAINFLOW_COLUMN_MAP.get(n_cols, ("unknown", max(1, n_cols // 4)))
+    # 按列数判断板卡(优先使用板卡标准采样率)
+    # BrainFlow RAW CSV 的 Timestamp 是按包级精度记录,多个样本共用同一时间戳,
+    # 仅靠 timestamp diff 推断 fs 不可靠(实测会把 Ganglion 200Hz 误判为 250/806Hz)
+    board_info = BRAINFLOW_COLUMN_MAP.get(n_cols)
+    if board_info is not None:
+        board, n_exg, board_fs = board_info
+    else:
+        board, n_exg, board_fs = "unknown", max(1, n_cols // 4), 0
 
     # EXG 通道: 列 1 到 n_exg+1 (列 0 是 Sample Index)
     exg_start = 1
@@ -326,10 +344,20 @@ def load_brainflow_csv(filepath: Path) -> dict:
     timestamps_sec = values[:, timestamp_col]
     times = timestamps_sec - timestamps_sec[0] if len(timestamps_sec) > 0 else np.arange(n_samples) / 250.0
 
-    # 推断采样率
-    if len(times) > 1:
-        dt = np.median(np.diff(times))
-        fs = int(round(1.0 / dt)) if dt > 0 else 250
+    # 采样率确定优先级:
+    # 1) 板卡标准 fs(若 board 已识别且 board_fs > 0)
+    # 2) timestamp 推断(仅当 board 为 unknown): 用 dt>0 的均值,避免包级精度导致中位数为 0
+    # 3) 默认 250 Hz 兜底
+    if board_fs > 0:
+        fs = board_fs
+    elif len(times) > 1:
+        dts = np.diff(times)
+        dts_nonzero = dts[dts > 0]
+        if len(dts_nonzero) > 0:
+            dt = float(np.mean(dts_nonzero))
+            fs = int(round(1.0 / dt)) if dt > 0 else 250
+        else:
+            fs = 250
     else:
         fs = 250
 
@@ -368,9 +396,59 @@ def load_brainflow_csv(filepath: Path) -> dict:
 
 
 def openbci_info(filepath: Path) -> dict:
-    """仅读取 OpenBCI 文件的元信息 (不加载全部数据)"""
-    info = _parse_header(filepath)
+    """仅读取 EEG 文件的元信息 (不加载全部数据)
+
+    自动识别两种格式:
+    - OpenBCI ODF (以 %OpenBCI 开头)
+    - BrainFlow CSV (有表头或 RAW Tab 分隔)
+    """
     file_size = filepath.stat().st_size
+
+    # BrainFlow CSV 路径
+    if _detect_brainflow_csv(filepath):
+        # 用 load_brainflow_csv 加载(实际数据已缓存于 pandas,代价可接受)
+        # 但为避免大文件全量加载,这里只读取首末行 + 行数估算
+        sep = _detect_separator(filepath)
+        # 仅读取首行推断板卡/通道/采样率
+        with open(filepath, "r", encoding="utf-8", errors="replace") as f:
+            first_line = f.readline().strip()
+        cols = [c.strip() for c in first_line.split(sep)]
+        n_cols = len(cols)
+        board_info = BRAINFLOW_COLUMN_MAP.get(n_cols)
+        if board_info is not None:
+            board, n_exg, fs = board_info
+        else:
+            board, n_exg, fs = "unknown", max(1, n_cols // 4), 250
+
+        # 行数估算(不加载全部数据)
+        with open(filepath, "r", encoding="utf-8", errors="replace") as f:
+            total_lines = sum(1 for _ in f)
+        # 检测是否有数字表头(若首行是 0,1,2,...,n-1)
+        try:
+            is_header = all(float(c) == float(i) for i, c in enumerate(cols))
+        except (ValueError, TypeError):
+            is_header = False
+        data_lines = total_lines - (1 if is_header else 0)
+        duration_sec = data_lines / fs if fs > 0 else 0
+
+        return {
+            "board": board,
+            "n_channels": n_exg,
+            "sample_rate": fs,
+            "exg_channels": [f"EXG_{i}" for i in range(n_exg)],
+            "has_accelerometer": n_cols >= 1 + n_exg + 3,
+            "has_analog": False,
+            "file_size_kb": round(file_size / 1024, 1),
+            "duration_sec": round(duration_sec, 1),
+            "duration_min": round(duration_sec / 60, 1),
+            "total_columns": n_cols,
+            "header_lines": 1 if is_header else 0,
+            "estimated_samples": data_lines,
+            "format": "brainflow_csv",
+        }
+
+    # OpenBCI ODF 路径
+    info = _parse_header(filepath)
 
     # 估算时长: 文件行数 × 数据行占比
     with open(filepath, "r", encoding="utf-8", errors="replace") as f:
