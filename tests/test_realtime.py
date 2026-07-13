@@ -168,3 +168,45 @@ def test_realtime_websocket(client):
             pytest.fail("未收到 data 类型帧")
     finally:
         client.post("/api/realtime/stop")
+
+
+# ========== Task 5: 端到端测试 ==========
+
+def test_realtime_e2e_synthetic(client):
+    """端到端:Synthetic Board 完整流程"""
+    # 1. 初始状态
+    assert client.get("/api/realtime/status").json()['state'] == 'IDLE'
+
+    # 2. 启动
+    resp = client.post("/api/realtime/start", json={"board_id": "synthetic", "params": {}})
+    assert resp.status_code == 200
+    assert resp.json()['ok'] is True
+
+    # 3. 确认采集状态
+    time.sleep(0.5)
+    status = client.get("/api/realtime/status").json()
+    assert status['state'] == 'STREAMING'
+    assert status['fs'] == 250
+    assert len(status['channels']) == 16  # Synthetic Board 返回 16 个 EXG 通道
+
+    # 4. WebSocket 接收数据
+    with client.websocket_connect("/ws/realtime") as ws:
+        for _ in range(10):
+            frame = ws.receive_json()
+            if frame.get('type') == 'data':
+                assert len(frame['data']) > 0
+                break
+
+    # 5. 停止
+    resp = client.post("/api/realtime/stop")
+    assert resp.json()['ok'] is True
+
+    # 6. 确认回到 IDLE
+    assert client.get("/api/realtime/status").json()['state'] == 'IDLE'
+
+
+def test_realtime_invalid_board(client):
+    """测试无效 board_id"""
+    resp = client.post("/api/realtime/start", json={"board_id": "invalid_board", "params": {}})
+    assert resp.status_code == 200
+    assert resp.json()['ok'] is False
