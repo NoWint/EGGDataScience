@@ -22,10 +22,38 @@ BANDS = {
 
 
 # ========== 1. 数据加载 ==========
-def load_eeg(filepath):
-    """加载 EEG CSV 文件，返回 (data, fs, channels)"""
+def load_eeg_full(filepath):
+    """加载 EEG 文件,自动检测格式,返回完整 dict
+
+    支持格式:
+    - OpenBCI ODF (.txt,带 %OpenBCI 头)
+    - BrainFlow CSV (.csv,数字索引列名)
+    - 普通 CSV (time + channel columns)
+
+    返回:
+        {
+            'data': np.ndarray (n_samples, n_exg),     # EXG, μV
+            'fs': int,                                  # 采样率
+            'channels': List[str],                      # EXG 通道名
+            'times': np.ndarray (n_samples,),           # 时间轴(秒)
+            'accel': np.ndarray | None,                 # (n_samples, 3) g
+            'markers': List[Marker] | None,             # 事件标记
+            'metadata': dict,                           # 板卡/格式/通道数等
+        }
+    """
+    from pathlib import Path
+    fp = Path(filepath)
+    from .openbci_import import (_detect_openbci, load_openbci,
+                                 _detect_brainflow_csv, load_brainflow_csv)
+
+    if _detect_openbci(fp):
+        return load_openbci(fp)
+
+    if _detect_brainflow_csv(fp):
+        return load_brainflow_csv(fp)
+
+    # 普通 CSV
     df = pd.read_csv(filepath)
-    # 自动识别时间戳列与数据列
     time_cols = [c for c in df.columns if c.lower() in ('time', 'timestamp', 't', '时间')]
     if time_cols:
         times = df[time_cols[0]].values
@@ -34,14 +62,41 @@ def load_eeg(filepath):
         times = np.arange(len(df)) / 250.0
         data_cols = list(df.columns)
 
-    data = df[data_cols].values.astype(np.float64)  # shape: (n_samples, n_channels)
-    # 推断采样率
+    data = df[data_cols].values.astype(np.float64)
     if len(times) > 1:
         dt = np.median(np.diff(times))
         fs = int(round(1.0 / dt)) if dt > 0 else 250
     else:
         fs = 250
-    return data, fs, data_cols, times
+
+    n_samples = len(data)
+    return {
+        'data': data,
+        'fs': fs,
+        'channels': list(data_cols),
+        'times': times,
+        'accel': None,
+        'markers': None,
+        'metadata': {
+            'format': 'plain_csv',
+            'board': 'unknown',
+            'n_channels': data.shape[1],
+            'sample_rate': fs,
+            'has_accelerometer': False,
+            'has_markers': False,
+            'duration_sec': float(n_samples / fs) if fs > 0 else 0.0,
+            'n_samples': int(n_samples),
+        }
+    }
+
+
+def load_eeg(filepath):
+    """加载 EEG 文件,返回 (data, fs, channels, times) 4 元组(向后兼容)
+
+    内部调用 load_eeg_full() 取前 4 字段。
+    """
+    result = load_eeg_full(filepath)
+    return result['data'], result['fs'], result['channels'], result['times']
 
 
 def load_events(filepath):
@@ -291,8 +346,9 @@ def paired_t_test(group_a, group_b):
     t, p = stats.ttest_rel(a[:n], b[:n])
     diff = a[:n] - b[:n]
     d = diff.mean() / (diff.std(ddof=1) + 1e-12)  # Cohen's d
-    return {'t': float(t), 'p': float(p), 'd': float(d),
-            'mean_diff': float(diff.mean()), 'n': int(n)}
+    return {'t': float(t) if not np.isnan(t) else 0.0,
+            'p': float(p) if not np.isnan(p) else 1.0,
+            'd': float(d), 'mean_diff': float(diff.mean()), 'n': int(n)}
 
 
 def repeated_measures_anova(groups):
@@ -333,7 +389,8 @@ def pearson_correlation(x, y):
     if n < 3:
         return {'r': 0, 'p': 1.0, 'n': n}
     r, p = stats.pearsonr(x[:n], y[:n])
-    return {'r': float(r), 'p': float(p), 'n': int(n)}
+    return {'r': float(r) if not np.isnan(r) else 0.0,
+            'p': float(p) if not np.isnan(p) else 1.0, 'n': int(n)}
 
 
 # ========== 7. 样例数据生成 (用于工具箱演示) ==========
