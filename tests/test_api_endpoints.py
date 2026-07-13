@@ -93,3 +93,29 @@ def test_analyze_returns_metadata(client, tmp_path):
         assert data['metadata']['format'] == 'plain_csv'
         assert 'has_accel' in data
         assert 'has_markers' in data
+
+
+def test_openbci_convert_no_convert_uv(client, sample_odf_path):
+    """测试 /api/openbci/convert 不再需要 convert_uv 参数"""
+    with open(sample_odf_path, "rb") as f:
+        response = client.post(
+            "/api/openbci/convert",
+            files={"file": ("test.txt", f, "text/plain")},
+        )
+    assert response.status_code == 200
+    data = response.json()
+    assert data['board'] == 'cyton'
+    assert data['sample_rate'] == 250
+    assert data['n_channels'] == 8
+    assert 'preview' in data
+
+
+def test_openbci_detect_any(client, sample_odf_path):
+    """测试 /api/openbci/detect-any 检测 ODF 格式"""
+    with open(sample_odf_path, "rb") as f:
+        response = client.post(
+            "/api/openbci/detect-any",
+            files={"file": ("test.txt", f, "text/plain")},
+        )
+    assert response.status_code == 200
+    assert response.json()['format'] == 'openbci_odf'
