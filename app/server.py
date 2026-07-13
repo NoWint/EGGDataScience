@@ -19,7 +19,7 @@ from pydantic import BaseModel
 
 from app.analysis import (
     generate_sample_eeg, events_to_df, run_full_pipeline,
-    load_eeg, load_events, preprocess, extract_features,
+    load_eeg, load_eeg_full, load_events, preprocess, extract_features,
     compute_all_recovery, compute_attenuation,
     paired_t_test, repeated_measures_anova, pearson_correlation,
 )
@@ -192,10 +192,21 @@ async def analyze_data(req: AnalyzeRequest):
     if not eeg_path.exists():
         raise HTTPException(404, f"未找到EEG数据: {req.condition}")
 
-    data, fs, channels, times = load_eeg(eeg_path)
+    # 用 load_eeg_full 获取完整数据(含 accel/markers/metadata)
+    eeg_result = load_eeg_full(eeg_path)
+    data, fs, channels, times = (
+        eeg_result['data'], eeg_result['fs'],
+        eeg_result['channels'], eeg_result['times']
+    )
 
+    # 事件文件优先;无事件文件时用 markers 自动生成 events_df
     if events_path.exists():
         events_df = pd.read_csv(events_path)
+    elif eeg_result['markers']:
+        events_df = pd.DataFrame(
+            [(m.label, m.timestamp) for m in eeg_result['markers']],
+            columns=['event_id', 'timestamp']
+        )
     else:
         # 无事件文件时使用默认时序
         events_df = pd.DataFrame([
@@ -217,6 +228,10 @@ async def analyze_data(req: AnalyzeRequest):
     result['condition'] = req.condition
     result['channels'] = channels
     result['n_samples'] = len(data)
+    # 新增元信息
+    result['metadata'] = eeg_result['metadata']
+    result['has_accel'] = eeg_result['accel'] is not None
+    result['has_markers'] = eeg_result['markers'] is not None and len(eeg_result['markers']) > 0
 
     RESULTS_STORE[req.condition] = result
     return _to_jsonable(result)
