@@ -221,7 +221,13 @@ def compute_signal_stats(data: np.ndarray, fs: int) -> Dict[str, List[float]]:
         每个值为各通道的列表
     """
     n_samples, n_channels = data.shape
+    if n_samples == 0:
+        return {'peak': [0.0]*n_channels, 'rms': [0.0]*n_channels,
+                'variance': [0.0]*n_channels, 'kurtosis': [0.0]*n_channels,
+                'skewness': [0.0]*n_channels, 'snr_db': [0.0]*n_channels}
     nperseg = min(1024, n_samples)
+    if nperseg < 1:
+        nperseg = 1
     peak, rms, variance, kurtosis, skewness, snr_db = [], [], [], [], [], []
 
     for ch in range(n_channels):

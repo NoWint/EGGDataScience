@@ -17,18 +17,8 @@ router = APIRouter(prefix="/api/spectrum", tags=["spectrum"])
 # 复用主服务的上传目录
 UPLOAD_DIR = Path(__file__).parent.parent.parent / "data" / "uploads"
 
-
-def _get_results_store() -> dict:
-    """获取主服务的分析结果存储
-    python -m app.server 启动时 __main__ 与 app.server 是不同模块，
-    需优先从 __main__ 获取（实际运行并修改 RESULTS_STORE 的模块）
-    """
-    import sys
-    main_mod = sys.modules.get('__main__')
-    if main_mod and hasattr(main_mod, 'RESULTS_STORE'):
-        return main_mod.RESULTS_STORE
-    from app.server import RESULTS_STORE
-    return RESULTS_STORE
+# 频谱分析独立结果存储（避免覆盖主 RESULTS_STORE 中的心流恢复结果）
+SPECTRUM_STORE: dict = {}
 
 
 class SampleSpectrumRequest(BaseModel):
@@ -63,9 +53,9 @@ async def analyze_sample(req: SampleSpectrumRequest):
     result['condition'] = req.condition
     result['disruption'] = disruption
 
-    # 存储到 RESULTS_STORE 供后续 /aperiodic 查询
-    store = _get_results_store()
-    store[req.condition] = result
+    # 存储到独立的 SPECTRUM_STORE 供后续 /aperiodic 查询
+    # （不写入主 RESULTS_STORE，避免覆盖心流恢复结果）
+    SPECTRUM_STORE[req.condition] = result
 
     return result
 
@@ -107,19 +97,18 @@ async def analyze_uploaded(
 @router.get("/aperiodic/{condition}")
 async def get_aperiodic(condition: str):
     """
-    获取指定条件的 1/f 斜率分析（从 RESULTS_STORE 获取数据）
+    获取指定条件的 1/f 斜率分析（从 SPECTRUM_STORE 获取数据）
 
     返回:
         {'slope': float, 'intercept': float,
          'fit_freqs': [...], 'fit_line': [...],
          'r_squared': float, 'condition': str}
     """
-    store = _get_results_store()
-    if condition not in store:
-        available = list(store.keys())
+    if condition not in SPECTRUM_STORE:
+        available = list(SPECTRUM_STORE.keys())
         raise HTTPException(404, f"未找到条件: {condition}，可用: {available}")
 
-    result = store[condition]
+    result = SPECTRUM_STORE[condition]
 
     # 优先使用已计算的 aperiodic_signal
     if 'aperiodic_signal' in result:

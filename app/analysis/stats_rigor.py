@@ -45,8 +45,8 @@ def paired_t_test(group_a, group_b, alternative='two-sided'):
     df = n - 1
 
     t_stat, p_value = scipy_stats.ttest_rel(a, b, alternative=alternative)
-    t_stat = float(t_stat)
-    p_value = float(p_value)
+    t_stat = float(t_stat) if not np.isnan(t_stat) else 0.0
+    p_value = float(p_value) if not np.isnan(p_value) else 1.0
 
     # CI95 (t 分布)
     t_crit = float(scipy_stats.t.ppf(0.975, df=df))
@@ -388,7 +388,9 @@ def eta_squared(groups):
     ss_error = ss_within - ss_subject
 
     eta_sq = float(ss_between / (ss_total + 1e-12))
-    partial_eta = float(ss_between / (ss_between + ss_error + 1e-12))
+    # 保护负分母 (ss_error 可能为负)
+    partial_denom = max(ss_between + ss_error, 1e-12)
+    partial_eta = float(ss_between / partial_denom)
 
     # 标签 (Cohen 标准: 0.01/0.06/0.14)
     if partial_eta < 0.01:

@@ -221,15 +221,26 @@ async def analyze_data(req: AnalyzeRequest):
     )
 
     # 事件文件优先;无事件文件时用 markers 自动生成 events_df
+    # 注意: 用户可能误上传 EEG 数据文件作为 events 文件,
+    # 此时读取的 DataFrame 列名是数字(0,1,2...)而非 event_id/timestamp,
+    # 需要校验列名,不合法则忽略该文件并用默认时序
+    events_df = None
     if events_path.exists():
-        events_df = pd.read_csv(events_path)
-    elif eeg_result['markers']:
+        try:
+            candidate_df = pd.read_csv(events_path)
+            if 'event_id' in candidate_df.columns and 'timestamp' in candidate_df.columns:
+                events_df = candidate_df
+        except Exception:
+            pass  # 读取失败,忽略
+
+    if events_df is None and eeg_result['markers']:
         events_df = pd.DataFrame(
             [(m.label, m.timestamp) for m in eeg_result['markers']],
             columns=['event_id', 'timestamp']
         )
-    else:
-        # 无事件文件时使用默认时序
+
+    if events_df is None:
+        # 无合法事件文件时使用默认时序
         events_df = pd.DataFrame([
             ('S0', 0.0), ('B0', 5.0), ('B1', 65.0),
             ('F0', 65.0), ('F1', 305.0), ('F2', 545.0),
@@ -260,6 +271,7 @@ async def analyze_data(req: AnalyzeRequest):
     result['condition'] = req.condition
     result['channels'] = channels
     result['n_samples'] = len(data)
+    result['duration_sec'] = len(data) / fs if fs else 0
     # 新增元信息
     result['metadata'] = eeg_result['metadata']
     result['has_accel'] = eeg_result['accel'] is not None

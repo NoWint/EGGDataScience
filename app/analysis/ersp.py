@@ -30,6 +30,8 @@ def _morlet_wavelet(freq: float, fs: int, wavelet_width: float = 5.0,
     返回复数小波 (长度自适应, 支撑约 ±3*sigma_t)
     """
     # 时间域标准差
+    if freq <= 0:
+        raise ValueError(f"频率必须为正数, 收到 freq={freq}")
     sigma_t = wavelet_width / (2.0 * np.pi * freq)
     # 小波支撑范围 (±3 sigma, 但确保至少 5 个采样点)
     half_len = max(int(np.ceil(3 * sigma_t * fs)), 5)
@@ -167,8 +169,14 @@ def _extract_epochs(data: np.ndarray, fs: int, events_df: pd.DataFrame,
         if not offsets:
             offsets = [0]
         epochs = np.array([
-            data[anchor + off - n_pre:anchor + off + n_post] for off in offsets
+            data[max(0, anchor + off - n_pre):anchor + off + n_post]
+            for off in offsets
         ])
+        # 过滤掉长度不足的 epoch (边界截断)
+        valid_mask = [e.shape[0] == n_epoch for e in epochs]
+        epochs = epochs[valid_mask] if not all(valid_mask) else epochs
+        if epochs.shape[0] == 0:
+            epochs = np.zeros((0, n_epoch, n_channels))
 
     return epochs, times
 
@@ -220,7 +228,13 @@ def _compute_ersp_from_power(epochs_power: np.ndarray, times: np.ndarray,
          power_avg: (n_freqs, n_times) 平均功率,
          bl_mask: 基线时间掩码)
     """
-    power_avg = epochs_power.mean(axis=0)
+    n_times_power = epochs_power.shape[2] if epochs_power.ndim == 3 else 0
+    n_times_times = len(times)
+    # 时间轴长度不匹配时, 以 epochs_power 为准重建 times
+    if n_times_power != n_times_times and n_times_power > 0:
+        t_start = times[0] if n_times_times > 0 else 0.0
+        times = t_start + np.arange(n_times_power) / fs
+    power_avg = epochs_power.mean(axis=0) if epochs_power.shape[0] > 0 else np.zeros((epochs_power.shape[1], n_times_power))
     n_times = len(times)
     bl_mask = (times >= baseline_start) & (times <= baseline_end)
     if bl_mask.sum() < 1:
@@ -232,6 +246,8 @@ def _compute_ersp_from_power(epochs_power: np.ndarray, times: np.ndarray,
         baseline_val = np.mean(power_avg[:, bl_mask], axis=1, keepdims=True)
     baseline_val = np.maximum(baseline_val, 1e-12)
 
+    # 保护 power_avg 避免 log10(0) = -inf
+    power_avg = np.maximum(power_avg, 1e-12)
     ersp = 10 * np.log10(power_avg / baseline_val)
     return ersp, power_avg, bl_mask
 
@@ -271,6 +287,15 @@ def compute_ersp(data, fs, events_df, event_id='X0', pre_stim=2.0, post_stim=5.0
     epochs, times = _extract_epochs(data, fs, events_df, event_id,
                                     pre_stim, post_stim)
     n_epochs = epochs.shape[0]
+
+    # 无有效 epoch 时返回空结果
+    if n_epochs == 0:
+        return {
+            'times': times.tolist(),
+            'freqs': freqs.tolist(),
+            'ersp': np.zeros((len(freqs), len(times))).tolist(),
+            'n_epochs': 0,
+        }
 
     # 2. per-epoch 功率
     epochs_power = _compute_epochs_power(epochs, fs, freqs)
@@ -334,7 +359,24 @@ def permutation_test_ersp(epochs_power, baseline_power,
     epochs_power = np.asarray(epochs_power, dtype=float)
     baseline_power = np.asarray(baseline_power, dtype=float)
 
+    if epochs_power.size == 0 or baseline_power.size == 0:
+        # 空输入时返回全 1 的 p 值 (不显著)
+        if epochs_power.ndim == 3:
+            n_freqs, n_times = epochs_power.shape[1], epochs_power.shape[2]
+        else:
+            n_freqs, n_times = 0, 0
+        return {
+            'p_values': np.ones((n_freqs, n_times)),
+            'significant_mask': np.zeros((n_freqs, n_times), dtype=bool),
+        }
+
     n_epochs, n_freqs, n_times = epochs_power.shape
+
+    if n_epochs == 0:
+        return {
+            'p_values': np.ones((n_freqs, n_times)),
+            'significant_mask': np.zeros((n_freqs, n_times), dtype=bool),
+        }
 
     # 基线功率: 每个 epoch 在基线时段取均值 -> (n_epochs, n_freqs)
     baseline_per_epoch = baseline_power.mean(axis=2)
@@ -537,6 +579,15 @@ def compute_itpc(data, fs, events_df, event_id='X0', pre_stim=1.0, post_stim=2.0
     n_epochs, n_epoch_samples, _ = epochs.shape
     n_freqs = len(freqs)
 
+    # 无有效 epoch 时返回零 ITPC
+    if n_epochs == 0:
+        return {
+            'times': times.tolist(),
+            'freqs': freqs.tolist(),
+            'itpc': np.zeros((n_freqs, n_epoch_samples)).tolist(),
+            'n_epochs': 0,
+        }
+
     # 2. 跨 epoch 相位向量累加 (多通道平均)
     phase_vector_sum = np.zeros((n_freqs, n_epoch_samples), dtype=complex)
     for ep in range(n_epochs):
@@ -548,7 +599,7 @@ def compute_itpc(data, fs, events_df, event_id='X0', pre_stim=1.0, post_stim=2.0
         phase_vector_sum += np.exp(1j * phase)
 
     # 3. 平均向量长度
-    itpc = np.abs(phase_vector_sum) / n_epochs
+    itpc = np.abs(phase_vector_sum) / max(n_epochs, 1)
 
     return {
         'times': times.tolist(),
@@ -610,6 +661,31 @@ def run_ersp_analysis(data, fs, events_df, event_id='X0'):
         data, fs, events_df, event_id, pre_stim=2.0, post_stim=5.0
     )
     n_epochs = epochs.shape[0]
+
+    # 无有效 epoch 时返回空结果
+    if n_epochs == 0:
+        n_freqs = len(freqs)
+        n_times = len(times)
+        return {
+            'ersp': {
+                'times': times.tolist(),
+                'freqs': freqs.tolist(),
+                'ersp': np.zeros((n_freqs, n_times)).tolist(),
+                'n_epochs': 0,
+                'permutation_test': {
+                    'p_values': np.ones((n_freqs, n_times)).tolist(),
+                    'significant_mask': np.zeros((n_freqs, n_times), dtype=int).tolist(),
+                    'n_permutations': 200,
+                },
+            },
+            'erd_ers': {'erd_mask': [], 'ers_mask': [], 'erd_ratio': 0.0, 'ers_ratio': 0.0},
+            'pac': {'phase_amp_corr': [], 'freqs': freqs.tolist()},
+            'itpc': {'times': times.tolist(), 'freqs': freqs.tolist(),
+                     'itpc': np.zeros((n_freqs, n_times)).tolist(), 'n_epochs': 0},
+            'event_id': event_id, 'fs': fs, 'n_channels': n_channels,
+            'n_samples': n_samples, 'duration_sec': n_samples / fs,
+        }
+
     epochs_power = _compute_epochs_power(epochs, fs, freqs)
     ersp, _, bl_mask = _compute_ersp_from_power(
         epochs_power, times, freqs,

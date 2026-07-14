@@ -44,6 +44,8 @@ def extract_epochs(data: np.ndarray, fs: int, events_df: pd.DataFrame,
 
     若事件只出现一次(如 X0)，则用滑窗法在事件周围生成多个 epoch（每 10s 一个伪 epoch）
     """
+    if fs <= 0:
+        raise ValueError(f"采样率 fs 必须为正数, 收到 fs={fs}")
     n_samples, n_channels = data.shape
     pre_samples = int(pre_stim * fs)
     post_samples = int(post_stim * fs)
