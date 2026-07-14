@@ -157,3 +157,112 @@ async def batch_progress(batch_id: str):
     if batch_id not in BATCH_STORE:
         raise HTTPException(404, f"未找到批次: {batch_id}")
     return BATCH_STORE[batch_id]
+
+
+import io
+import zipfile
+from fastapi.responses import StreamingResponse
+
+
+def _build_batch_summary_md(batch_id: str) -> str:
+    """构建批量分析汇总 Markdown"""
+    results = BATCH_RESULTS_STORE.get(batch_id, {})
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+    lines = [
+        f"# EEG 批量分析汇总报告",
+        f"",
+        f"**生成时间**: {now}  ",
+        f"**批次 ID**: {batch_id}  ",
+        f"**文件总数**: {len(results)}",
+        f"",
+        f"## 各文件分析结果",
+        f"",
+        f"| 被试 | 条件 | 恢复时长(s) | 伪迹占比 | 心流 | 频谱 | ERP | ERSP | 伪迹检测 |",
+        f"|------|------|-----------|---------|------|------|-----|------|---------|",
+    ]
+
+    for key, res in results.items():
+        subject = res.get('subject', '?')
+        condition = res.get('condition', '?')
+        if 'error' in res:
+            lines.append(f"| {subject} | {condition} | - | - | 失败 | - | - | - | - |")
+            continue
+        flow = res.get('flow_recovery', {})
+        rt = flow.get('recovery_time') if 'error' not in flow else None
+        art = flow.get('artifact_ratio', 0) if 'error' not in flow else 0
+        rt_str = f"{rt:.1f}" if rt else ">600"
+        art_str = f"{art*100:.2f}%" if art else "-"
+
+        def status(mod_key):
+            r = res.get(mod_key, {})
+            return "失败" if 'error' in r else "OK"
+
+        lines.append(
+            f"| {subject} | {condition} | {rt_str} | {art_str} | "
+            f"{status('flow_recovery')} | {status('spectrum')} | {status('erp')} | "
+            f"{status('ersp')} | {status('artifact')} |"
+        )
+
+    lines.append(f"")
+    lines.append(f"## 失败详情")
+    lines.append(f"")
+    progress = BATCH_STORE.get(batch_id, {})
+    errors = progress.get('errors', [])
+    if errors:
+        for e in errors:
+            lines.append(f"- **{e['file']}**: {e['error']}")
+    else:
+        lines.append(f"无失败项")
+    lines.append(f"")
+    lines.append(f"---")
+    lines.append(f"")
+    lines.append(f"*报告由 EEGDataScience 自动生成 — Author: [NoWint](https://github.com/NoWint)*")
+    return '\n'.join(lines)
+
+
+@router.get("/export-batch-report")
+async def export_batch_report(batch_id: str):
+    """导出批量分析报告 ZIP"""
+    # 延迟导入以避免循环导入
+    from app.server import _to_jsonable
+
+    if batch_id not in BATCH_RESULTS_STORE:
+        available = list(BATCH_RESULTS_STORE.keys())
+        raise HTTPException(404, f"未找到批次: {batch_id}，可用: {available}")
+
+    results = BATCH_RESULTS_STORE[batch_id]
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+        # 汇总报告
+        zf.writestr('batch_summary.md', _build_batch_summary_md(batch_id))
+
+        # 每个文件的报告
+        for key, res in results.items():
+            if 'error' in res and 'flow_recovery' not in res:
+                continue
+            zf.writestr(f'per_file/{key}_results.json',
+                        json.dumps(_to_jsonable(res), ensure_ascii=False, indent=2))
+            # 尝试生成单文件报告 MD (如果 _build_full_report_md 存在)
+            try:
+                from app.server import _build_full_report_md
+                md = _build_full_report_md(res)
+                zf.writestr(f'per_file/{key}_report.md', md)
+            except (ImportError, Exception):
+                pass  # 函数不存在或生成失败时跳过
+
+        # 原始数据
+        batch_dir = _get_upload_dir() / "batch" / batch_id
+        if batch_dir.exists():
+            for fpath in batch_dir.iterdir():
+                if fpath.is_file():
+                    zf.write(str(fpath), f'original_data/{fpath.name}')
+
+    buf.seek(0)
+    filename = f"EEG_BatchReport_{batch_id}.zip"
+    return StreamingResponse(
+        buf,
+        media_type='application/zip',
+        headers={'Content-Disposition': f'attachment; filename="{filename}"'},
+    )

@@ -71,3 +71,39 @@ def test_batch_progress_returns_status():
     assert progress["status"] in ("running", "done", "failed")
     assert "total" in progress
     assert "current" in progress
+
+
+def test_export_batch_report_returns_zip():
+    """GET /api/export-batch-report 应返回 ZIP 文件"""
+    import tempfile, os, json, time
+    import numpy as np
+    fs = 250
+    n = fs * 10
+    rows = [f"{i}\t{10*np.sin(2*np.pi*10*i/fs):.4f}\t0\t0\t0\t0\t0\t0\t{int(i/fs*1000)}\t0" for i in range(n)]
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as f:
+        f.write('\n'.join(rows)); f.flush()
+        filepath = f.name
+    filename = os.path.basename(filepath)
+    assignments = json.dumps([{"filename": filename, "subject": "S01", "condition": "AtoA"}])
+    with open(filepath, 'rb') as fh:
+        resp = client.post("/api/batch-analyze", files={"files": (filename, fh, "text/csv")}, data={"assignments": assignments})
+    os.unlink(filepath)
+    batch_id = resp.json()["batch_id"]
+
+    # 等待分析完成
+    for _ in range(60):
+        prog = client.get(f"/api/batch-progress/{batch_id}").json()
+        if prog["status"] != "running":
+            break
+        time.sleep(1)
+
+    # 导出
+    resp2 = client.get(f"/api/export-batch-report?batch_id={batch_id}")
+    assert resp2.status_code == 200
+    assert "zip" in resp2.headers.get("content-type", "").lower()
+    # 验证是合法 ZIP
+    import zipfile, io
+    zf = zipfile.ZipFile(io.BytesIO(resp2.content))
+    names = zf.namelist()
+    assert "batch_summary.md" in names
+    assert any(n.startswith("per_file/") for n in names)
