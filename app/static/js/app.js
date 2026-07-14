@@ -47,8 +47,36 @@ document.addEventListener('DOMContentLoaded', () => {
     initButtons();
     initFileInputs();
     initSidebarNav();
+    initThemeToggle();
     if (window.initRealtime) initRealtime();
 });
+
+// ---------- 主题切换 ----------
+function initThemeToggle() {
+    const btn = document.getElementById('btn-theme-toggle');
+    if (!btn) return;
+    updateThemeUI();
+    btn.addEventListener('click', () => {
+        const current = document.documentElement.getAttribute('data-theme');
+        const next = current === 'dark' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', next);
+        localStorage.setItem('eeg-theme', next);
+        updateThemeUI();
+    });
+}
+
+function updateThemeUI() {
+    const current = document.documentElement.getAttribute('data-theme');
+    const icon = document.getElementById('theme-icon');
+    const label = document.getElementById('theme-label');
+    if (current === 'dark') {
+        if (icon) icon.textContent = '☀️';
+        if (label) label.textContent = '浅色模式';
+    } else {
+        if (icon) icon.textContent = '🌙';
+        if (label) label.textContent = '深色模式';
+    }
+}
 
 // ---------- 标签页切换 ----------
 // 仅处理心流恢复视图的源数据标签 (data-tab)，其他模块各自绑定避免互相干扰

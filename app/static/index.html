@@ -5,6 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>EEGDataScience — 心流恢复分析</title>
     <link rel="stylesheet" href="/static/css/style.css?v=5">
+    <script>
+        // 防止 FOUC: 在 CSS 加载后立即应用保存的主题
+        (function() {
+            var saved = localStorage.getItem('eeg-theme');
+            if (!saved) {
+                saved = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+            }
+            document.documentElement.setAttribute('data-theme', saved);
+        })();
+    </script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -111,6 +121,10 @@
         </div>
 
         <div class="sidebar-footer">
+            <button class="theme-toggle" id="btn-theme-toggle" title="切换深色/浅色模式">
+                <span class="theme-toggle-icon" id="theme-icon">🌙</span>
+                <span class="theme-toggle-label" id="theme-label">深色模式</span>
+            </button>
             <div class="footer-author">
                 <span class="footer-label">作者</span>
                 <a href="https://github.com/NoWint" target="_blank" class="footer-link">NoWint</a>
@@ -1301,7 +1315,7 @@
 
 <script src="/static/js/topomap.js?v=4"></script>
 <script src="/static/js/realtime.js?v=4"></script>
-<script src="/static/js/app.js?v=4"></script>
+<script src="/static/js/app.js?v=5"></script>
 <script src="/static/js/batch.js?v=5"></script>
 <script src="/static/js/neurolink.js?v=5"></script>
 </body>

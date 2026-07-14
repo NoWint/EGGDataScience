@@ -1292,10 +1292,86 @@ select.text-input {
 }
 
 /* ==========================================================
-   深色模式 — prefers-color-scheme: dark
+   深色模式 — 手动切换 + 系统偏好
    ========================================================== */
+
+/* 主题切换按钮 */
+.theme-toggle {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    width: 100%;
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--border-l1);
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    margin-bottom: var(--space-3);
+}
+
+.theme-toggle:hover {
+    background: var(--border-l0);
+    border-color: var(--border-l2);
+}
+
+.theme-toggle-icon {
+    font-size: 14px;
+}
+
+/* 深色模式令牌 (复用于手动和自动) */
+:root[data-theme="dark"],
+:root:not([data-theme="light"]) {
+    /* 默认不应用深色 — 仅当 data-theme="dark" 或系统偏好时生效 */
+}
+
+:root[data-theme="dark"] {
+    --brand: #6B5FF5;
+    --brand-hover: #8279FF;
+    --brand-bg: rgba(107, 95, 245, 0.12);
+    --brand-bg-hover: rgba(107, 95, 245, 0.18);
+
+    --invert: #E5E5E5;
+    --invert-hover: #FFFFFF;
+
+    --surface-sidebar: #1A1A1A;
+    --surface-main: #0D0D0D;
+    --surface-elevated: #1E1E1E;
+    --surface-sunken: #252525;
+
+    --text-primary: #F5F5F5;
+    --text-secondary: #E0E0E0;
+    --text-tertiary: #A0A0A0;
+    --text-quaternary: #707070;
+    --text-on-brand: #FFFFFF;
+
+    --border-l0: rgba(255, 255, 255, 0.06);
+    --border-l1: rgba(255, 255, 255, 0.10);
+    --border-l2: rgba(255, 255, 255, 0.16);
+    --border-l3: rgba(255, 255, 255, 0.32);
+
+    --shadow-float: 0 4px 16px rgba(0, 0, 0, 0.32), 0 1px 4px rgba(0, 0, 0, 0.24);
+    --shadow-overlay: 0 8px 32px rgba(0, 0, 0, 0.40), 0 2px 8px rgba(0, 0, 0, 0.28);
+}
+
+:root[data-theme="dark"] body {
+    background: var(--surface-main);
+}
+
+:root[data-theme="dark"] .nl-canvas {
+    background: var(--surface-sunken);
+}
+
+:root[data-theme="dark"] .realtime-stats .stat-card { background: var(--surface-elevated) !important; border-color: var(--border-l2) !important; }
+:root[data-theme="dark"] .realtime-stats .stat-value { color: var(--text-primary) !important; }
+:root[data-theme="dark"] .bp-grid span { color: var(--text-tertiary) !important; }
+:root[data-theme="dark"] .bp-grid strong { color: var(--text-primary) !important; }
+
+/* 系统偏好自动深色 (仅当未手动设置时) */
 @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-theme="light"]) {
         --brand: #6B5FF5;
         --brand-hover: #8279FF;
         --brand-bg: rgba(107, 95, 245, 0.12);
@@ -1324,17 +1400,16 @@ select.text-input {
         --shadow-overlay: 0 8px 32px rgba(0, 0, 0, 0.40), 0 2px 8px rgba(0, 0, 0, 0.28);
     }
 
-    html, body {
+    :root:not([data-theme="light"]) body {
         background: var(--surface-main);
     }
 
-    .nl-canvas {
+    :root:not([data-theme="light"]) .nl-canvas {
         background: var(--surface-sunken);
     }
 
-    /* 旧内联样式硬编码颜色覆盖 */
-    .realtime-stats .stat-card { background: var(--surface-elevated) !important; border-color: var(--border-l2) !important; }
-    .realtime-stats .stat-value { color: var(--text-primary) !important; }
-    .bp-grid span { color: var(--text-tertiary) !important; }
-    .bp-grid strong { color: var(--text-primary) !important; }
+    :root:not([data-theme="light"]) .realtime-stats .stat-card { background: var(--surface-elevated) !important; border-color: var(--border-l2) !important; }
+    :root:not([data-theme="light"]) .realtime-stats .stat-value { color: var(--text-primary) !important; }
+    :root:not([data-theme="light"]) .bp-grid span { color: var(--text-tertiary) !important; }
+    :root:not([data-theme="light"]) .bp-grid strong { color: var(--text-primary) !important; }
 }
