@@ -39,6 +39,7 @@ from app.routers.stats_viz import router as stats_viz_router
 from app.routers.openbci import router as openbci_router
 from app.routers.realtime import router as realtime_router, realtime_websocket_endpoint
 from app.routers.batch import router as batch_router
+from app.routers.neurolink import router as neurolink_router, neurolink_websocket_endpoint
 
 
 # ========== 安全 JSON 序列化 ==========
@@ -92,6 +93,7 @@ app.include_router(stats_viz_router)
 app.include_router(openbci_router)
 app.include_router(realtime_router)
 app.include_router(batch_router)
+app.include_router(neurolink_router)
 
 
 # ========== WebSocket 端点 ==========
@@ -99,6 +101,12 @@ app.include_router(batch_router)
 async def ws_realtime(websocket: WebSocket):
     """实时采集 WebSocket 端点"""
     await realtime_websocket_endpoint(websocket)
+
+
+@app.websocket("/ws/neurolink")
+async def ws_neurolink(websocket: WebSocket):
+    """NeuroLink 实时数据 WebSocket 端点"""
+    await neurolink_websocket_endpoint(websocket)
 
 BASE_DIR = Path(__file__).parent
 STATIC_DIR = BASE_DIR / "static"

@@ -34,3 +34,24 @@ def test_client_metrics_buffer():
                         "band_power": {"delta": 10, "theta": 8, "alpha": 5, "beta": 3, "gamma": 1}})
     metrics = client.get_latest_metrics()
     assert metrics["theta_alpha_ratio"] == 1.5
+
+
+from fastapi.testclient import TestClient
+from app.server import app
+
+client = TestClient(app)
+
+
+def test_neurolink_status_endpoint():
+    """GET /api/neurolink/status 应返回状态"""
+    resp = client.get("/api/neurolink/status")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "connected" in data
+    assert "recording" in data
+
+
+def test_neurolink_disconnect_without_connect():
+    """未连接时 disconnect 应安全返回"""
+    resp = client.post("/api/neurolink/disconnect")
+    assert resp.status_code == 200
