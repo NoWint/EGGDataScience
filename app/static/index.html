@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>EEGDataScience — 心流恢复分析</title>
-    <link rel="stylesheet" href="/static/css/style.css?v=3">
+    <link rel="stylesheet" href="/static/css/style.css?v=4">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -60,6 +60,9 @@
                 <a class="nav-item" data-module="realtime">
                     <span class="nav-item-text">实时采集</span>
                 </a>
+                <a class="nav-item" data-module="neurolink">
+                    <span class="nav-item-text">实时监测</span>
+                </a>
             </div>
 
             <div class="nav-group">
@@ -73,6 +76,9 @@
                 <a class="nav-item nav-item-disabled" data-module="experiments">
                     <span class="nav-item-text">实验记录</span>
                     <span class="nav-item-tag">即将推出</span>
+                </a>
+                <a class="nav-item" data-module="batch">
+                    <span class="nav-item-text">批量分析</span>
                 </a>
                 <a class="nav-item nav-item-disabled" data-module="archive">
                     <span class="nav-item-text">数据归档</span>
@@ -1269,12 +1275,34 @@
             </div>
         </div>
 
+        <!-- ========== 批量分析视图 ========== -->
+        <section class="module-view" id="view-batch">
+            <div class="view-header">
+                <h1 class="view-title">批量分析</h1>
+                <p class="view-desc">批量导入多个 EEG 文件，分配被试与条件，一键全分析并导出报告</p>
+            </div>
+            <div class="view-body" id="batch-container">
+            </div>
+        </section>
+
+        <!-- ========== 实时监测视图 ========== -->
+        <section class="module-view" id="view-neurolink">
+            <div class="view-header">
+                <h1 class="view-title">实时监测</h1>
+                <p class="view-desc">连接 NeuroLink 平台，实时监测 EEG 波形与心流指标</p>
+            </div>
+            <div class="view-body" id="neurolink-container">
+            </div>
+        </section>
+
     </main>
 
 </div>
 
-<script src="/static/js/topomap.js?v=3"></script>
-<script src="/static/js/realtime.js?v=3"></script>
-<script src="/static/js/app.js?v=3"></script>
+<script src="/static/js/topomap.js?v=4"></script>
+<script src="/static/js/realtime.js?v=4"></script>
+<script src="/static/js/app.js?v=4"></script>
+<script src="/static/js/batch.js?v=4"></script>
+<script src="/static/js/neurolink.js?v=4"></script>
 </body>
 </html>
