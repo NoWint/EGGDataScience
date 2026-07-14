@@ -38,6 +38,7 @@ from app.routers.ersp import router as ersp_router
 from app.routers.stats_viz import router as stats_viz_router
 from app.routers.openbci import router as openbci_router
 from app.routers.realtime import router as realtime_router, realtime_websocket_endpoint
+from app.routers.batch import router as batch_router
 
 
 # ========== 安全 JSON 序列化 ==========
@@ -90,6 +91,7 @@ app.include_router(ersp_router)
 app.include_router(stats_viz_router)
 app.include_router(openbci_router)
 app.include_router(realtime_router)
+app.include_router(batch_router)
 
 
 # ========== WebSocket 端点 ==========
