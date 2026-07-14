@@ -23,10 +23,19 @@ source venv/bin/activate
 # 检查端口是否被占用
 PORT=18765
 if lsof -i :$PORT &> /dev/null; then
-    echo "[提示] 端口 $PORT 已被占用，可能服务已在运行"
-    echo "  正在尝试打开浏览器..."
-    open "http://localhost:$PORT"
-    exit 0
+    echo "[提示] 端口 $PORT 已被占用，正在关闭旧服务..."
+    # 杀掉占用端口的旧进程(可能是旧代码版本的服务)
+    OLD_PID=$(lsof -ti :$PORT 2>/dev/null)
+    if [ -n "$OLD_PID" ]; then
+        kill $OLD_PID 2>/dev/null
+        sleep 2
+        # 如果还没退出,强制杀
+        if lsof -i :$PORT &> /dev/null; then
+            kill -9 $OLD_PID 2>/dev/null
+            sleep 1
+        fi
+    fi
+    echo "  旧服务已关闭"
 fi
 
 # 后台启动服务

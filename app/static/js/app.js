@@ -201,6 +201,11 @@ async function uploadAndAnalyze() {
         formData.append('condition', condition);
 
         const uploadResp = await fetch('/api/upload', { method: 'POST', body: formData });
+        if (!uploadResp.ok) {
+            let msg = `上传失败 (HTTP ${uploadResp.status})`;
+            try { const e = await uploadResp.json(); msg = e.detail || msg; } catch (_) {}
+            throw new Error(msg);
+        }
         const uploadData = await uploadResp.json();
         if (uploadData.detail) throw new Error(uploadData.detail);
 
@@ -210,6 +215,11 @@ async function uploadAndAnalyze() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ ...params, condition }),
         });
+        if (!analyzeResp.ok) {
+            let msg = `分析失败 (HTTP ${analyzeResp.status})`;
+            try { const e = await analyzeResp.json(); msg = e.detail || e.error || msg; } catch (_) {}
+            throw new Error(msg);
+        }
         const data = await analyzeResp.json();
         if (data.error) throw new Error(data.error);
 
