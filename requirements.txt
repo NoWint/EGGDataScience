@@ -11,3 +11,4 @@ setuptools<81
 # 深度学习模型 (eeg_dl 模块) 依赖
 torch>=2.0.0
 rich>=13.0.0
+websocket-client
