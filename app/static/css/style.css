@@ -1151,54 +1151,54 @@ select.text-input {
 
 /* 频谱 Tab */
 .spectrum-tabs { display: flex; gap: 8px; margin-bottom: 16px; }
-.tab-btn { padding: 6px 16px; border: 1px solid #ddd; background: #fff; cursor: pointer; border-radius: 6px; }
-.tab-btn.active { background: #4B3FE3; color: #fff; border-color: #4B3FE3; }
+.tab-btn { padding: 6px 16px; border: 1px solid var(--border-l2); background: var(--surface-elevated); color: var(--text-secondary); cursor: pointer; border-radius: 6px; }
+.tab-btn.active { background: var(--brand); color: var(--text-on-brand); border-color: var(--brand); }
 .tab-panel { display: none; }
 .tab-panel.active { display: block; }
 
 /* 地形图 */
 .topomap-content { display: flex; gap: 24px; align-items: center; }
-#topomap-canvas { border: 1px solid #ddd; border-radius: 8px; background: #fff; }
+#topomap-canvas { border: 1px solid var(--border-l2); border-radius: 8px; background: var(--surface-elevated); }
 .topomap-bands { display: flex; gap: 8px; }
-.band-btn { padding: 4px 12px; border: 1px solid #ddd; background: #fff; cursor: pointer; border-radius: 4px; font-size: 13px; }
-.band-btn.active { background: #4B3FE3; color: #fff; }
+.band-btn { padding: 4px 12px; border: 1px solid var(--border-l2); background: var(--surface-elevated); color: var(--text-secondary); cursor: pointer; border-radius: 4px; font-size: 13px; }
+.band-btn.active { background: var(--brand); color: var(--text-on-brand); border-color: var(--brand); }
 
 /* Focus 统计卡片 */
 .focus-stats { display: flex; gap: 16px; margin-bottom: 24px; }
-.stat-card { padding: 16px 24px; border: 1px solid #ddd; border-radius: 8px; min-width: 200px; }
-.stat-label { font-size: 13px; color: #666; margin-bottom: 4px; }
-.stat-value { font-size: 28px; font-weight: 600; }
+.stat-card { padding: 16px 24px; border: 1px solid var(--border-l2); border-radius: 8px; min-width: 200px; }
+.stat-label { font-size: 13px; color: var(--text-tertiary); margin-bottom: 4px; }
+.stat-value { font-size: 28px; font-weight: 600; color: var(--text-primary); }
 .stat-hint { font-size: 12px; margin-top: 4px; }
 
 /* 滤波设置面板 */
-.filter-panel { margin-top: auto; padding: 12px; border-top: 1px solid #eee; }
-.filter-header { font-size: 13px; color: #666; margin-bottom: 8px; }
+.filter-panel { margin-top: auto; padding: 12px; border-top: 1px solid var(--border-l1); }
+.filter-header { font-size: 13px; color: var(--text-tertiary); margin-bottom: 8px; }
 .filter-presets { display: flex; gap: 4px; flex-wrap: wrap; }
-.preset-btn { padding: 4px 10px; border: 1px solid #ddd; background: #fff; cursor: pointer; border-radius: 4px; font-size: 12px; }
-.preset-btn.active { background: #4B3FE3; color: #fff; border-color: #4B3FE3; }
+.preset-btn { padding: 4px 10px; border: 1px solid var(--border-l2); background: var(--surface-elevated); color: var(--text-secondary); cursor: pointer; border-radius: 4px; font-size: 12px; }
+.preset-btn.active { background: var(--brand); color: var(--text-on-brand); border-color: var(--brand); }
 .filter-advanced { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
-.filter-advanced label { font-size: 12px; display: flex; justify-content: space-between; }
-.filter-advanced input { width: 60px; }
+.filter-advanced label { font-size: 12px; display: flex; justify-content: space-between; color: var(--text-secondary); }
+.filter-advanced input { width: 60px; background: var(--surface-sunken); color: var(--text-primary); border: 1px solid var(--border-l2); border-radius: 4px; padding: 2px 4px; }
 
 
 /* === 实时采集模块 === */
-.board-select { padding: 6px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; }
-.realtime-status-bar { padding: 12px 16px; background: #f9fafb; border-radius: 8px; margin-bottom: 16px; display: flex; gap: 16px; align-items: center; font-size: 14px; }
-.realtime-canvas-container { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; margin-bottom: 16px; }
+.board-select { padding: 6px 12px; border: 1px solid var(--border-l2); border-radius: 6px; font-size: 14px; background: var(--surface-elevated); color: var(--text-primary); }
+.realtime-status-bar { padding: 12px 16px; background: var(--surface-sunken); border-radius: 8px; margin-bottom: 16px; display: flex; gap: 16px; align-items: center; font-size: 14px; color: var(--text-secondary); }
+.realtime-canvas-container { background: var(--surface-elevated); border: 1px solid var(--border-l2); border-radius: 8px; padding: 12px; margin-bottom: 16px; }
 #realtime-canvas { width: 100%; height: 400px; display: block; }
 .realtime-stats { display: flex; gap: 16px; flex-wrap: wrap; }
-.realtime-stats .stat-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; min-width: 160px; flex: 1; }
-.realtime-stats .stat-label { font-size: 12px; color: #6b7280; margin-bottom: 8px; }
-.realtime-stats .stat-value { font-size: 28px; font-weight: 700; color: #1f2937; }
-.realtime-stats .stat-hint { font-size: 13px; margin-top: 4px; }
+.realtime-stats .stat-card { background: var(--surface-elevated); border: 1px solid var(--border-l2); border-radius: 8px; padding: 16px; min-width: 160px; flex: 1; }
+.realtime-stats .stat-label { font-size: 12px; color: var(--text-tertiary); margin-bottom: 8px; }
+.realtime-stats .stat-value { font-size: 28px; font-weight: 700; color: var(--text-primary); }
+.realtime-stats .stat-hint { font-size: 13px; margin-top: 4px; color: var(--text-tertiary); }
 .band-powers-card { min-width: 220px; }
 .bp-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; font-size: 14px; }
-.bp-grid span { color: #6b7280; }
-.bp-grid strong { color: #1f2937; font-size: 15px; }
-.btn-primary { background: #4B3FE3; color: #fff; border: none; padding: 8px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; }
-.btn-primary:disabled { background: #d1d5db; cursor: not-allowed; }
-.btn-danger { background: #ef4444; color: #fff; border: none; padding: 8px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; }
-.btn-danger:disabled { background: #d1d5db; cursor: not-allowed; }
+.bp-grid span { color: var(--text-tertiary); }
+.bp-grid strong { color: var(--text-primary); font-size: 15px; }
+.btn-primary { background: var(--brand); color: var(--text-on-brand); border: none; padding: 8px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; }
+.btn-primary:disabled { background: var(--border-l2); color: var(--text-tertiary); cursor: not-allowed; }
+.btn-danger { background: var(--error); color: var(--text-on-brand); border: none; padding: 8px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; }
+.btn-danger:disabled { background: var(--border-l2); color: var(--text-tertiary); cursor: not-allowed; }
 
 /* ==========================================================
    CSS 变量别名 (供 batch.js / neurolink.js 内联样式使用)
@@ -1360,15 +1360,6 @@ select.text-input {
     background: var(--surface-main);
 }
 
-:root[data-theme="dark"] .nl-canvas {
-    background: var(--surface-sunken);
-}
-
-:root[data-theme="dark"] .realtime-stats .stat-card { background: var(--surface-elevated) !important; border-color: var(--border-l2) !important; }
-:root[data-theme="dark"] .realtime-stats .stat-value { color: var(--text-primary) !important; }
-:root[data-theme="dark"] .bp-grid span { color: var(--text-tertiary) !important; }
-:root[data-theme="dark"] .bp-grid strong { color: var(--text-primary) !important; }
-
 /* 系统偏好自动深色 (仅当未手动设置时) */
 @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
@@ -1403,13 +1394,4 @@ select.text-input {
     :root:not([data-theme="light"]) body {
         background: var(--surface-main);
     }
-
-    :root:not([data-theme="light"]) .nl-canvas {
-        background: var(--surface-sunken);
-    }
-
-    :root:not([data-theme="light"]) .realtime-stats .stat-card { background: var(--surface-elevated) !important; border-color: var(--border-l2) !important; }
-    :root:not([data-theme="light"]) .realtime-stats .stat-value { color: var(--text-primary) !important; }
-    :root:not([data-theme="light"]) .bp-grid span { color: var(--text-tertiary) !important; }
-    :root:not([data-theme="light"]) .bp-grid strong { color: var(--text-primary) !important; }
 }

@@ -38,6 +38,56 @@ async function fetchJSON(url, options) {
     return resp.json();
 }
 
+// ---------- 主题色读取 (供 Chart.js / Canvas 使用) ----------
+function themeColors() {
+    const cs = getComputedStyle(document.documentElement);
+    const get = (name) => cs.getPropertyValue(name).trim();
+    return {
+        surface: get('--surface-elevated') || '#FFFFFF',
+        textPrimary: get('--text-primary') || '#171717',
+        textSecondary: get('--text-secondary') || '#404040',
+        textTertiary: get('--text-tertiary') || '#737373',
+        borderL2: get('--border-l2') || 'rgba(115,115,115,0.18)',
+    };
+}
+
+// 应用主题色到 Chart.js 全局默认 + 已存在的图表实例
+function refreshChartTheme() {
+    if (typeof Chart === 'undefined') return;
+    const tc = themeColors();
+    Chart.defaults.color = tc.textSecondary;
+    Chart.defaults.borderColor = tc.borderL2;
+    if (Chart.defaults.plugins?.tooltip) {
+        Chart.defaults.plugins.tooltip.backgroundColor = tc.surface;
+        Chart.defaults.plugins.tooltip.titleColor = tc.textPrimary;
+        Chart.defaults.plugins.tooltip.bodyColor = tc.textSecondary;
+    }
+    // 收集所有图表注册表中的实例
+    const registries = [charts, spectrumCharts, erpCharts, erspCharts, artifactCharts, statsVizCharts];
+    registries.forEach(reg => {
+        if (!reg) return;
+        Object.values(reg).forEach(chart => {
+            if (!chart) return;
+            const tooltip = chart.options.plugins?.tooltip;
+            if (tooltip) {
+                tooltip.backgroundColor = tc.surface;
+                tooltip.titleColor = tc.textPrimary;
+                tooltip.bodyColor = tc.textSecondary;
+            }
+            if (chart.options.scales) {
+                Object.values(chart.options.scales).forEach(scale => {
+                    if (scale?.ticks) scale.ticks.color = tc.textSecondary;
+                    if (scale?.pointLabels) scale.pointLabels.color = tc.textSecondary;
+                });
+            }
+            if (chart.options.plugins?.legend?.labels) {
+                chart.options.plugins.legend.labels.color = tc.textSecondary;
+            }
+            try { chart.update('none'); } catch (e) {}
+        });
+    });
+}
+
 // ==========================================================
 // 初始化
 // ==========================================================
@@ -55,6 +105,7 @@ document.addEventListener('DOMContentLoaded', () => {
 function initThemeToggle() {
     const btn = document.getElementById('btn-theme-toggle');
     if (!btn) return;
+    refreshChartTheme();
     updateThemeUI();
     btn.addEventListener('click', () => {
         const current = document.documentElement.getAttribute('data-theme');
@@ -62,6 +113,8 @@ function initThemeToggle() {
         document.documentElement.setAttribute('data-theme', next);
         localStorage.setItem('eeg-theme', next);
         updateThemeUI();
+        // 等待 CSS 变量生效后刷新图表
+        requestAnimationFrame(() => refreshChartTheme());
     });
 }
 
@@ -170,7 +223,7 @@ function showToast(msg) {
     toast.textContent = msg;
     toast.style.cssText = `
         position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
-        background: var(--invert); color: #fff; padding: 8px 16px;
+        background: var(--invert); color: var(--text-on-brand); padding: 8px 16px;
         border-radius: 6px; font-size: 13px; z-index: 2000;
         opacity: 0; transition: opacity 0.2s;
     `;
@@ -365,6 +418,9 @@ function renderResults(data) {
     if (data.band_powers) renderSpectrum(data);
     if (data.topomap_data) renderTopomapModule(data.topomap_data);
     if (data.focus_scores) renderFocus(data.focus_scores);
+
+    // 图表创建后应用主题色 (覆盖 Chart.js 配置中的硬编码浅色)
+    requestAnimationFrame(() => refreshChartTheme());
 }
 
 // ==========================================================
@@ -449,7 +505,7 @@ function renderTimeSeriesChart(data) {
             ctx.setLineDash([]);
 
             // 文字标注
-            ctx.fillStyle = '#737373';
+            ctx.fillStyle = themeColors().textTertiary;
             ctx.font = '11px ' + getComputedStyle(document.body).fontFamily;
             ctx.textAlign = 'center';
             ctx.fillText('稳态', (x1 + x2) / 2, chartArea.top + 14);
@@ -1327,6 +1383,7 @@ function renderSpectrumCharts(data) {
     renderPSDChart(data.psd);
     renderBandsChart(data.band_powers);
     renderSpectrogramChart(data.spectrogram);
+    requestAnimationFrame(() => refreshChartTheme());
 }
 
 function renderPSDChart(psd) {
@@ -1620,6 +1677,7 @@ function renderERPChart(data) {
         },
         plugins: [peakPlugin],
     });
+    requestAnimationFrame(() => refreshChartTheme());
 }
 
 function renderERPComponentsTable(data) {
@@ -1684,6 +1742,7 @@ function renderERPDiffChart(data, c1, c2) {
             },
         }
     });
+    requestAnimationFrame(() => refreshChartTheme());
 }
 
 // ==========================================================
@@ -1780,6 +1839,7 @@ function renderERSPResults(data) {
     if (data.pac) renderPACCharts(data.pac);
     const itpc = data.itpc || {};
     renderHeatmap('canvas-itpc', itpc.times || ersp.times || [], itpc.freqs || ersp.freqs || [], itpc.itpc || [], 'sequential', 'ITPC (0-1)');
+    requestAnimationFrame(() => refreshChartTheme());
 }
 
 function renderERDERSChart(erdErs) {
@@ -1954,6 +2014,7 @@ function renderArtifactResults(data) {
     renderICAPowerChart(ica.classification || []);
     // 信号特征
     renderSignalStatsTable(data.signal_stats || {});
+    requestAnimationFrame(() => refreshChartTheme());
 }
 
 function renderQualityScore(score, grade, factors) {
@@ -2182,6 +2243,7 @@ function renderRadarChart(prof) {
             },
         }
     });
+    requestAnimationFrame(() => refreshChartTheme());
 }
 
 async function renderTopomapFromConfig() {
@@ -2279,7 +2341,7 @@ function renderTopomapOnCanvas(canvasId, gridData, values, title) {
     }
 
     // 头圆
-    ctx.strokeStyle = '#404040';
+    ctx.strokeStyle = themeColors().textSecondary;
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.arc(cx, cy, radius, 0, Math.PI * 2);
@@ -2297,17 +2359,17 @@ function renderTopomapOnCanvas(canvasId, gridData, values, title) {
     ctx.stroke();
     // 通道点
     channels.forEach(ch => {
-        ctx.fillStyle = '#262626';
+        ctx.fillStyle = themeColors().textPrimary;
         ctx.beginPath();
         ctx.arc(ch.x, ch.y, 4, 0, Math.PI * 2);
         ctx.fill();
-        ctx.fillStyle = '#404040';
+        ctx.fillStyle = themeColors().textSecondary;
         ctx.font = '11px ' + getComputedStyle(document.body).fontFamily;
         ctx.textAlign = 'center';
         ctx.fillText(ch.name, ch.x, ch.y - 8);
     });
     // 标题
-    ctx.fillStyle = '#262626';
+    ctx.fillStyle = themeColors().textPrimary;
     ctx.font = '13px ' + getComputedStyle(document.body).fontFamily;
     ctx.textAlign = 'center';
     ctx.fillText(title, cx, h - 8);
@@ -2352,6 +2414,7 @@ function renderCrossSubjectChart(sum) {
         }
     });
     wrap.innerHTML = `<p class="block-desc">当前为汇总数据；接入多被试数据后将显示均值 ± 95% CI</p>`;
+    requestAnimationFrame(() => refreshChartTheme());
 }
 
 async function exportStatsViz() {
@@ -2393,7 +2456,7 @@ function renderHeatmap(canvasId, times, freqs, matrix, colorScale, colorbarLabel
     ctx.clearRect(0, 0, w, h);
 
     if (!times.length || !freqs.length || !matrix.length) {
-        ctx.fillStyle = '#A1A1A1';
+        ctx.fillStyle = themeColors().textTertiary;
         ctx.font = '12px ' + getComputedStyle(document.body).fontFamily;
         ctx.textAlign = 'center';
         ctx.fillText('无数据', w / 2, h / 2);
@@ -2448,7 +2511,7 @@ function renderHeatmap(canvasId, times, freqs, matrix, colorScale, colorbarLabel
     ctx.strokeRect(padL, padT, plotW, plotH);
 
     // X 轴刻度 (时间)
-    ctx.fillStyle = '#737373';
+    ctx.fillStyle = themeColors().textTertiary;
     ctx.font = '10px ' + getComputedStyle(document.body).fontFamily;
     ctx.textAlign = 'center';
     const xTicks = 6;
@@ -2490,7 +2553,7 @@ function renderHeatmap(canvasId, times, freqs, matrix, colorScale, colorbarLabel
     ctx.strokeStyle = 'rgba(115,115,115,0.36)';
     ctx.strokeRect(cbX, cbY, cbW, cbH);
     // 颜色条刻度
-    ctx.fillStyle = '#737373';
+    ctx.fillStyle = themeColors().textTertiary;
     ctx.textAlign = 'left';
     ctx.font = '10px ' + getComputedStyle(document.body).fontFamily;
     ctx.fillText(normMax.toFixed(2), cbX + cbW + 4, cbY + 8);
