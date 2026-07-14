@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>EEGDataScience — 心流恢复分析</title>
-    <link rel="stylesheet" href="/static/css/style.css?v=2">
+    <link rel="stylesheet" href="/static/css/style.css?v=3">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -142,6 +142,7 @@
                     <div class="source-tabs">
                         <button class="tab-btn active" data-tab="sample">模拟数据</button>
                         <button class="tab-btn" data-tab="upload">上传数据</button>
+                        <button class="tab-btn" data-tab="full">全局分析</button>
                     </div>
 
                     <div class="tab-panel active" id="panel-sample">
@@ -182,6 +183,25 @@
                                 <span class="upload-hint" id="hint-events">未选择</span>
                             </div>
                             <input type="text" id="upload-condition" class="text-input" placeholder="条件名称" value="custom">
+                        </div>
+                    </div>
+
+                    <div class="tab-panel" id="panel-full">
+                        <div class="upload-area">
+                            <div class="upload-slot">
+                                <label class="upload-label">EEG 文件 (.csv / .txt)</label>
+                                <input type="file" id="file-full-eeg" accept=".csv,.txt" class="upload-input">
+                                <span class="upload-hint" id="hint-full-eeg">未选择</span>
+                            </div>
+                            <div class="upload-slot">
+                                <label class="upload-label">事件标记 (.csv, 可选)</label>
+                                <input type="file" id="file-full-events" accept=".csv" class="upload-input">
+                                <span class="upload-hint" id="hint-full-events">未选择</span>
+                            </div>
+                            <div class="full-analysis-info" style="font-size:12px;color:var(--text-tertiary);line-height:1.6;margin-top:8px;">
+                                一键运行全部 5 个分析模块：心流恢复 / 频谱 / ERP / ERSP / 伪迹检测<br>
+                                分析完成后可下载全局报告 ZIP（含 MD 报告 + JSON 结果 + 原始数据）
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -229,6 +249,8 @@
                 <div class="config-actions">
                     <button class="btn btn-primary btn-block" id="btn-run-sample">运行分析</button>
                     <button class="btn btn-secondary btn-block" id="btn-upload" style="display:none;">上传并分析</button>
+                    <button class="btn btn-primary btn-block" id="btn-run-full" style="display:none;">一键全分析</button>
+                    <button class="btn btn-secondary btn-block" id="btn-download-report" style="display:none;">下载全局报告 ZIP</button>
                     <button class="btn btn-ghost btn-block" id="btn-report-single">生成当前条件报告</button>
                 </div>
 
@@ -1251,8 +1273,8 @@
 
 </div>
 
-<script src="/static/js/topomap.js?v=2"></script>
-<script src="/static/js/realtime.js?v=2"></script>
-<script src="/static/js/app.js?v=2"></script>
+<script src="/static/js/topomap.js?v=3"></script>
+<script src="/static/js/realtime.js?v=3"></script>
+<script src="/static/js/app.js?v=3"></script>
 </body>
 </html>

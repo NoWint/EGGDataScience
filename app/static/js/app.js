@@ -63,6 +63,8 @@ function initTabs() {
             // 切换操作按钮显示
             document.getElementById('btn-run-sample').style.display = tab === 'sample' ? '' : 'none';
             document.getElementById('btn-upload').style.display = tab === 'upload' ? '' : 'none';
+            document.getElementById('btn-run-full').style.display = tab === 'full' ? '' : 'none';
+            document.getElementById('btn-download-report').style.display = 'none'; // 分析后才显示
         });
     });
 }
@@ -82,6 +84,8 @@ function initConditionCards() {
 function initButtons() {
     document.getElementById('btn-run-sample').addEventListener('click', runSample);
     document.getElementById('btn-upload').addEventListener('click', uploadAndAnalyze);
+    document.getElementById('btn-run-full').addEventListener('click', runFullAnalysis);
+    document.getElementById('btn-download-report').addEventListener('click', downloadFullReport);
     document.getElementById('btn-refresh-stats').addEventListener('click', refreshStats);
     document.getElementById('btn-report-single')?.addEventListener('click', () => generateReport(selectedCondition));
     document.getElementById('btn-report-full')?.addEventListener('click', () => generateReport(null));
@@ -96,6 +100,15 @@ function initFileInputs() {
     });
     evtInput.addEventListener('change', () => {
         document.getElementById('hint-events').textContent = evtInput.files[0]?.name || '未选择文件';
+    });
+    // 全局分析文件输入
+    const fullEegInput = document.getElementById('file-full-eeg');
+    const fullEvtInput = document.getElementById('file-full-events');
+    fullEegInput.addEventListener('change', () => {
+        document.getElementById('hint-full-eeg').textContent = fullEegInput.files[0]?.name || '未选择';
+    });
+    fullEvtInput.addEventListener('change', () => {
+        document.getElementById('hint-full-events').textContent = fullEvtInput.files[0]?.name || '未选择';
     });
 }
 
@@ -233,6 +246,71 @@ async function uploadAndAnalyze() {
     } finally {
         showLoading(false);
     }
+}
+
+// ==========================================================
+// 一键全分析 (心流恢复 + 频谱 + ERP + ERSP + 伪迹)
+// ==========================================================
+async function runFullAnalysis() {
+    const eegFile = document.getElementById('file-full-eeg').files[0];
+    if (!eegFile) { alert('请选择 EEG 数据文件'); return; }
+
+    const evtFile = document.getElementById('file-full-events').files[0];
+
+    showLoading(true);
+    try {
+        const formData = new FormData();
+        formData.append('eeg_file', eegFile);
+        if (evtFile) formData.append('events_file', evtFile);
+        formData.append('condition', 'full');
+
+        const resp = await fetch('/api/analyze-all', { method: 'POST', body: formData });
+        if (!resp.ok) {
+            let msg = `分析失败 (HTTP ${resp.status})`;
+            try { const e = await resp.json(); msg = e.detail || msg; } catch (_) {}
+            throw new Error(msg);
+        }
+        const data = await resp.json();
+
+        // 渲染心流恢复结果 (主视图)
+        if (data.flow_recovery && !data.flow_recovery.error) {
+            const flowData = { ...data.flow_recovery, condition: 'full',
+                               duration_sec: data.duration_sec, n_samples: data.n_samples };
+            renderResults(flowData);
+            document.getElementById('result-empty').style.display = 'none';
+            document.getElementById('result-content').style.display = 'flex';
+            document.getElementById('stats-block').style.display = 'block';
+        }
+
+        // 显示下载按钮
+        document.getElementById('btn-download-report').style.display = '';
+
+        // 汇总提示
+        const modules = ['flow_recovery', 'spectrum', 'erp', 'ersp', 'artifact'];
+        const okCount = modules.filter(m => data[m] && !data[m].error).length;
+        const failCount = modules.length - okCount;
+        let msg = `全分析完成: ${okCount}/${modules.length} 模块成功`;
+        if (failCount > 0) {
+            const failed = modules.filter(m => data[m]?.error).map(m => {
+                const names = { flow_recovery: '心流恢复', spectrum: '频谱', erp: 'ERP', ersp: 'ERSP', artifact: '伪迹' };
+                return `${names[m]}(${data[m].error.substring(0, 30)})`;
+            });
+            msg += `\n失败模块: ${failed.join(', ')}`;
+        }
+        msg += '\n\n点击"下载全局报告 ZIP"获取完整报告';
+        alert(msg);
+    } catch (err) {
+        alert('全分析失败: ' + err.message);
+    } finally {
+        showLoading(false);
+    }
+}
+
+// ==========================================================
+// 下载全局报告 ZIP
+// ==========================================================
+function downloadFullReport() {
+    window.location.href = '/api/export-full-report?condition=full';
 }
 
 // ==========================================================

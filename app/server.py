@@ -3,18 +3,21 @@ EEGDataScience — FastAPI 服务端
 跨学科任务切换对心流状态的影响及EEG恢复时间量化研究
 """
 import os
+import io
 import json
 import math
+import zipfile
 import tempfile
 import shutil
+from datetime import datetime
 from pathlib import Path
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 
 import numpy as np
 import pandas as pd
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, WebSocket
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
 from pydantic import BaseModel
 
 from app.analysis import (
@@ -23,6 +26,10 @@ from app.analysis import (
     compute_all_recovery, compute_attenuation,
     paired_t_test, repeated_measures_anova, pearson_correlation,
 )
+from app.analysis.spectrum import run_spectrum_analysis
+from app.analysis.erp import run_erp_analysis
+from app.analysis.ersp import run_ersp_analysis
+from app.analysis.artifact import run_artifact_analysis
 from app.routers.subjects import router as subjects_router
 from app.routers.spectrum import router as spectrum_router
 from app.routers.artifact import router as artifact_router
@@ -534,6 +541,343 @@ async def generate_report(condition: Optional[str] = None):
 
 # ========== 工具函数 ==========
 # _to_jsonable 已在文件顶部定义, 供 SafeJSONResponse 使用
+
+
+# ========== 全局分析结果存储 (一键全分析) ==========
+FULL_RESULTS_STORE: Dict[str, Any] = {}
+
+
+# ========== API: 一键全分析 ==========
+@app.post("/api/analyze-all")
+async def analyze_all(
+    eeg_file: UploadFile = File(...),
+    events_file: Optional[UploadFile] = File(None),
+    condition: str = Form("full"),
+):
+    """一键导入 EEG 文件, 运行全部 5 个分析模块, 返回汇总结果
+
+    分析模块: 心流恢复 / 频谱 / ERP / ERSP / 伪迹
+    结果存储到 FULL_RESULTS_STORE, 供后续导出全局报告
+    """
+    if not eeg_file.filename.lower().endswith(('.csv', '.txt')):
+        raise HTTPException(400, "EEG 文件需为 CSV 或 TXT 格式")
+
+    # 保存上传文件
+    eeg_path = UPLOAD_DIR / f"eeg_{condition}.csv"
+    with open(eeg_path, "wb") as f:
+        shutil.copyfileobj(eeg_file.file, f)
+
+    events_path = UPLOAD_DIR / f"events_{condition}.csv"
+    if events_file and events_file.filename:
+        with open(events_path, "wb") as f:
+            shutil.copyfileobj(events_file.file, f)
+    else:
+        events_path = None
+
+    # 加载 EEG 数据
+    eeg_result = load_eeg_full(eeg_path)
+    data, fs, channels, times = (
+        eeg_result['data'], eeg_result['fs'],
+        eeg_result['channels'], eeg_result['times']
+    )
+
+    # 构建事件 DataFrame (复用 analyze_data 的校验逻辑)
+    events_df = None
+    if events_path and events_path.exists():
+        try:
+            candidate_df = pd.read_csv(events_path)
+            if 'event_id' in candidate_df.columns and 'timestamp' in candidate_df.columns:
+                events_df = candidate_df
+        except Exception:
+            pass
+
+    if events_df is None and eeg_result['markers']:
+        events_df = pd.DataFrame(
+            [(m.label, m.timestamp) for m in eeg_result['markers']],
+            columns=['event_id', 'timestamp']
+        )
+
+    if events_df is None:
+        events_df = pd.DataFrame([
+            ('S0', 0.0), ('B0', 5.0), ('B1', 65.0),
+            ('F0', 65.0), ('F1', 305.0), ('F2', 545.0),
+            ('X0', 545.0), ('X1', 665.0),
+            ('R0', 665.0), ('R1', 1265.0), ('Q0', 1265.0),
+        ], columns=['event_id', 'timestamp'])
+
+    # 运行全部 5 个分析模块 (捕获各自异常, 不因单模块失败而中断)
+    results = {'condition': condition, 'eeg_path': str(eeg_path), 'fs': fs,
+               'channels': channels, 'n_samples': len(data),
+               'duration_sec': len(data) / fs if fs else 0,
+               'metadata': eeg_result['metadata']}
+
+    # 1. 心流恢复
+    try:
+        flow_result = run_full_pipeline(data, fs, events_df)
+        results['flow_recovery'] = flow_result
+    except Exception as e:
+        results['flow_recovery'] = {'error': str(e)}
+
+    # 2. 频谱分析
+    try:
+        spec_result = run_spectrum_analysis(data, fs, nperseg=min(1024, len(data)//4 or 256), overlap=0.5)
+        results['spectrum'] = spec_result
+    except Exception as e:
+        results['spectrum'] = {'error': str(e)}
+
+    # 3. ERP
+    try:
+        erp_result = run_erp_analysis(data, fs, events_df, event_id='X0')
+        results['erp'] = erp_result
+    except Exception as e:
+        results['erp'] = {'error': str(e)}
+
+    # 4. ERSP
+    try:
+        ersp_result = run_ersp_analysis(data, fs, events_df, event_id='X0')
+        results['ersp'] = ersp_result
+    except Exception as e:
+        results['ersp'] = {'error': str(e)}
+
+    # 5. 伪迹检测
+    try:
+        art_result = run_artifact_analysis(data, fs)
+        results['artifact'] = art_result
+    except Exception as e:
+        results['artifact'] = {'error': str(e)}
+
+    FULL_RESULTS_STORE[condition] = results
+    return _to_jsonable(results)
+
+
+# ========== API: 导出全局报告 ZIP ==========
+def _build_full_report_md(results: Dict) -> str:
+    """生成全局 Markdown 报告 (覆盖 5 个分析模块)"""
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    cond = results.get('condition', 'full')
+    fs = results.get('fs', 0)
+    channels = results.get('channels', [])
+    n_samples = results.get('n_samples', 0)
+    duration = results.get('duration_sec', 0)
+    meta = results.get('metadata', {})
+
+    lines = [
+        f"# EEG 全局分析报告",
+        f"",
+        f"> 跨学科任务切换对心流状态的影响及EEG恢复时间量化研究",
+        f"",
+        f"**生成时间**: {now}  ",
+        f"**数据条件**: {cond}  ",
+        f"**采样率**: {fs} Hz  ",
+        f"**通道**: {', '.join(channels) if channels else 'N/A'}  ",
+        f"**样本数**: {n_samples:,}  ",
+        f"**时长**: {duration/60:.1f} 分钟 ({duration:.1f} 秒)  ",
+        f"**数据来源**: {meta.get('source', 'unknown')}  ",
+        f"**板型号**: {meta.get('board', 'unknown')}",
+        f"",
+        f"---",
+        f"",
+    ]
+
+    # 1. 心流恢复
+    flow = results.get('flow_recovery', {})
+    if 'error' not in flow:
+        rt = flow.get('recovery_time')
+        art_ratio = flow.get('artifact_ratio', 0)
+        att = flow.get('attenuation', {})
+        evt = flow.get('event_times', {})
+        cfg = flow.get('config', {})
+        lines.extend([
+            f"## 1. 心流恢复分析",
+            f"",
+            f"### 核心指标",
+            f"",
+            f"| 指标 | 值 |",
+            f"|------|-----|",
+            f"| 综合恢复时长 | {rt:.1f} 秒 ({rt/60:.1f} 分钟) |" if rt else f"| 综合恢复时长 | >600 秒 (未恢复) |",
+            f"| 伪迹占比 | {art_ratio*100:.2f}% |",
+            f"| 心流稳态期 | {evt.get('flow_steady_start', 0):.0f}s - {evt.get('flow_steady_end', 0):.0f}s |",
+            f"| 切换期 | {evt.get('switch_start', 0):.0f}s - {evt.get('switch_end', 0):.0f}s |",
+            f"| 恢复期起点 | {evt.get('recovery_start', 0):.0f}s |",
+            f"",
+            f"### 各指标恢复时长与衰减",
+            f"",
+            f"| 指标 | 基准值 | 衰减幅度 | 恢复时长(秒) |",
+            f"|------|--------|----------|-------------|",
+        ])
+        baseline = flow.get('baseline_means', {})
+        rec_per = flow.get('recovery_per_feature', {})
+        for key, name in [('theta_alpha_ratio', 'Theta/Alpha'), ('alpha_rel', 'Alpha'),
+                          ('beta_rel', 'Beta'), ('gamma_rel', 'Gamma'),
+                          ('eeg_entropy', '熵值'), ('cog_load', '认知负载')]:
+            b = baseline.get(key, 0)
+            a = att.get(key, 0)
+            r = rec_per.get(key, '-')
+            r_str = f"{r:.1f}" if isinstance(r, (int, float)) else str(r)
+            lines.append(f"| {name} | {b:.4f} | {a:.4f} | {r_str} |")
+        lines.append(f"")
+    else:
+        lines.extend([f"## 1. 心流恢复分析", f"", f"> 分析失败: {flow['error']}", f""])
+
+    # 2. 频谱分析
+    spec = results.get('spectrum', {})
+    if 'error' not in spec:
+        bp = spec.get('band_powers', {})
+        aps = spec.get('aperiodic_signal', {})
+        lines.extend([
+            f"## 2. 频谱分析",
+            f"",
+            f"### 各频段能量",
+            f"",
+            f"| 频段 | 能量 |",
+            f"|------|------|",
+        ])
+        for band, val in bp.items() if isinstance(bp, dict) else []:
+            if isinstance(val, dict):
+                val_str = f"abs={val.get('abs',0):.2f}, rel={val.get('rel',0):.2f}%"
+            elif isinstance(val, list):
+                val_str = ', '.join(f'{v:.4f}' for v in val[:4])
+            else:
+                val_str = f'{val:.4f}' if isinstance(val, (int, float)) else str(val)
+            lines.append(f"| {band} | {val_str} |")
+        if aps:
+            lines.extend([
+                f"",
+                f"### 1/f 非周期信号",
+                f"",
+                f"- 斜率 (slope): {aps.get('slope', 0):.4f}",
+                f"- 截距 (intercept): {aps.get('intercept', 0):.4f}",
+                f"- R²: {aps.get('r_squared', 0):.4f}",
+                f"",
+            ])
+        else:
+            lines.append(f"")
+    else:
+        lines.extend([f"## 2. 频谱分析", f"", f"> 分析失败: {spec['error']}", f""])
+
+    # 3. ERP
+    erp = results.get('erp', {})
+    if 'error' not in erp:
+        ep = erp.get('epochs', {})
+        comp = erp.get('components', [])
+        p2p = erp.get('peak_to_peak', [])
+        rmse = erp.get('rmse', [])
+        p2p_str = ', '.join(f'{v:.2f}' for v in p2p) if isinstance(p2p, list) else f'{p2p:.2f}'
+        rmse_str = ', '.join(f'{v:.4f}' for v in rmse) if isinstance(rmse, list) else f'{rmse:.4f}'
+        lines.extend([
+            f"## 3. ERP 事件相关电位",
+            f"",
+            f"- 触发事件: {erp.get('event_id', 'X0')}",
+            f"- 平均 epoch 数: {ep.get('n_epochs', 0)}",
+            f"- 峰峰值: {p2p_str}",
+            f"- RMSE: {rmse_str}",
+            f"",
+        ])
+        if comp:
+            lines.extend([f"### ERP 成分", f"", f"| 成分 | 通道 | 峰值潜伏期(ms) | 峰值幅度(μV) | 显著性 |", f"|------|------|-------------|------------|--------|"])
+            for c in comp:
+                sig = c.get('significance', '')
+                lines.append(f"| {c.get('name', '?')} | {c.get('channel', '?')} | {c.get('latency_ms', 0):.1f} | {c.get('amplitude', 0):.2f} | {sig} |")
+            lines.append(f"")
+    else:
+        lines.extend([f"## 3. ERP 事件相关电位", f"", f"> 分析失败: {erp['error']}", f""])
+
+    # 4. ERSP
+    ersp = results.get('ersp', {})
+    if 'error' not in ersp:
+        er = ersp.get('ersp', {})
+        erd = ersp.get('erd_ers', {})
+        pac = ersp.get('pac', {})
+        itpc = ersp.get('itpc', {})
+        lines.extend([
+            f"## 4. ERSP 时频分析",
+            f"",
+            f"- ERSP 矩阵: {len(er.get('freqs', []))} 频点 × {len(er.get('times', []))} 时间点",
+            f"- 有效 epoch 数: {er.get('n_epochs', 0)}",
+            f"- ERD 占比: {erd.get('erd_ratio', 0)*100:.1f}%",
+            f"- ERS 占比: {erd.get('ers_ratio', 0)*100:.1f}%",
+            f"- 排列置换检验次数: {er.get('permutation_test', {}).get('n_permutations', 0)}",
+            f"",
+            f"### ITPC 跨试次相位一致性",
+            f"",
+            f"- epoch 数: {itpc.get('n_epochs', 0)}",
+            f"- 频点数: {len(itpc.get('freqs', []))}",
+            f"",
+        ])
+    else:
+        lines.extend([f"## 4. ERSP 时频分析", f"", f"> 分析失败: {ersp['error']}", f""])
+
+    # 5. 伪迹检测
+    art = results.get('artifact', {})
+    if 'error' not in art:
+        td = art.get('threshold_detection', {})
+        zd = art.get('zscore_detection', {})
+        wd = art.get('wavelet_detection', {})
+        q = art.get('quality', {})
+        lines.extend([
+            f"## 5. 伪迹检测",
+            f"",
+            f"### 检测结果汇总",
+            f"",
+            f"| 方法 | 伪迹占比 | 伪迹段数 |",
+            f"|------|---------|---------|",
+            f"| 阈值法 | {td.get('artifact_ratio', 0)*100:.2f}% | {td.get('n_segments', 0)} |",
+            f"| Z-score | {zd.get('artifact_ratio', 0)*100:.2f}% | {zd.get('n_segments', 0)} |",
+            f"| 小波法 | {wd.get('artifact_ratio', 0)*100:.2f}% | {wd.get('n_segments', 0)} |",
+            f"",
+            f"### 信号质量评估",
+            f"",
+            f"- 质量评分: {q.get('score', 0):.1f}/100",
+            f"- 质量等级: {q.get('grade', 'N/A')}",
+            f"",
+        ])
+    else:
+        lines.extend([f"## 5. 伪迹检测", f"", f"> 分析失败: {art['error']}", f""])
+
+    lines.extend([
+        f"---",
+        f"",
+        f"*报告由 EEGDataScience 自动生成 — Author: [NoWint](https://github.com/NoWint)*",
+    ])
+    return '\n'.join(lines)
+
+
+@app.get("/api/export-full-report")
+async def export_full_report(condition: str = "full"):
+    """导出全局报告 ZIP (含 MD 报告 + 原始数据)"""
+    if condition not in FULL_RESULTS_STORE:
+        available = list(FULL_RESULTS_STORE.keys())
+        raise HTTPException(404, f"未找到全分析结果: {condition}，可用: {available}")
+
+    results = FULL_RESULTS_STORE[condition]
+
+    # 生成 Markdown 报告
+    md_content = _build_full_report_md(results)
+
+    # 构建 ZIP
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+        # MD 报告
+        zf.writestr('EEG_Report.md', md_content)
+        # JSON 原始分析结果
+        json_data = _to_jsonable(results)
+        zf.writestr('analysis_results.json', json.dumps(json_data, ensure_ascii=False, indent=2))
+        # 原始 EEG 数据
+        eeg_path = Path(results.get('eeg_path', ''))
+        if eeg_path.exists():
+            zf.write(str(eeg_path), f'original_data/{eeg_path.name}')
+        # 事件文件 (如有)
+        events_path = UPLOAD_DIR / f"events_{condition}.csv"
+        if events_path.exists():
+            zf.write(str(events_path), f'original_data/{events_path.name}')
+
+    buf.seek(0)
+    filename = f"EEG_FullReport_{condition}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+    return StreamingResponse(
+        buf,
+        media_type='application/zip',
+        headers={'Content-Disposition': f'attachment; filename="{filename}"'},
+    )
 
 
 # ========== 静态文件 ==========
