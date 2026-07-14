@@ -508,8 +508,7 @@ function renderLegend() {
 async function refreshStats() {
     showLoading(true);
     try {
-        const resp = await fetch('/api/stats');
-        const data = await resp.json();
+        const data = await fetchJSON('/api/stats');
         if (data.error) {
             alert(data.error);
             return;
@@ -650,8 +649,7 @@ async function generateReport(condition) {
     showLoading(true);
     try {
         const url = condition ? `/api/report/${condition}` : '/api/report';
-        const resp = await fetch(url);
-        const data = await resp.json();
+        const data = await fetchJSON(url);
         if (data.detail) throw new Error(data.detail);
 
         // 捕获当前图表图像
@@ -1046,8 +1044,7 @@ function buildReportHTML(data, images) {
 // ==========================================================
 async function loadSubjects() {
     try {
-        const resp = await fetch('/api/subjects');
-        const subjects = await resp.json();
+        const subjects = await fetchJSON('/api/subjects');
         renderSubjectsTable(subjects);
     } catch (err) {
         document.getElementById('subjects-table-wrap').innerHTML = '<p class="block-desc">加载失败</p>';
@@ -1082,8 +1079,7 @@ async function loadSubjectExperiments(subjectId, subjectCode) {
     document.getElementById('subject-experiments-block').style.display = 'block';
     document.getElementById('subject-exp-title').textContent = `${subjectCode} 的实验记录`;
     try {
-        const resp = await fetch(`/api/subjects/${subjectId}/experiments`);
-        const exps = await resp.json();
+        const exps = await fetchJSON(`/api/subjects/${subjectId}/experiments`);
         if (!exps.length) {
             document.getElementById('experiments-table-wrap').innerHTML = '<p class="block-desc">暂无实验记录</p>';
             return;
@@ -1401,8 +1397,7 @@ async function runERPUpload() {
         formData.append('condition', 'custom');
         formData.append('event_id', erpEventId);
         formData.append('fs', 250);
-        const resp = await fetch('/api/erp/analyze', { method: 'POST', body: formData });
-        const data = await resp.json();
+        const data = await fetchJSON('/api/erp/analyze', { method: 'POST', body: formData });
         if (data.error) throw new Error(data.error);
         erpLastData = data;
         document.getElementById('erp-empty').style.display = 'none';
@@ -1422,12 +1417,11 @@ async function runERPCompare() {
     if (c1 === c2) { showToast('请选择两个不同条件'); return; }
     showLoading(true);
     try {
-        const resp = await fetch('/api/erp/compare', {
+        const data = await fetchJSON('/api/erp/compare', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ conditions: [c1, c2], fs: 250, event_id: erpEventId })
         });
-        const data = await resp.json();
         if (data.error) throw new Error(data.error);
         renderERPDiffChart(data, c1, c2);
     } catch (err) {
@@ -1661,8 +1655,7 @@ async function runERSPUpload() {
         formData.append('condition', 'custom');
         formData.append('event_id', erspEventId);
         formData.append('fs', 250);
-        const resp = await fetch('/api/ersp/analyze', { method: 'POST', body: formData });
-        const data = await resp.json();
+        const data = await fetchJSON('/api/ersp/analyze', { method: 'POST', body: formData });
         if (data.error) throw new Error(data.error);
         document.getElementById('ersp-empty').style.display = 'none';
         document.getElementById('ersp-content').style.display = 'flex';
@@ -1828,8 +1821,7 @@ async function runArtifactUpload() {
         formData.append('eeg_file', eegFile);
         formData.append('condition', 'custom');
         formData.append('fs', 250);
-        const resp = await fetch('/api/artifact/analyze', { method: 'POST', body: formData });
-        const data = await resp.json();
+        const data = await fetchJSON('/api/artifact/analyze', { method: 'POST', body: formData });
         if (data.error) throw new Error(data.error);
         document.getElementById('artifact-empty').style.display = 'none';
         document.getElementById('artifact-content').style.display = 'flex';
@@ -2105,12 +2097,11 @@ async function renderTopomapFromConfig() {
     }
     showLoading(true);
     try {
-        const resp = await fetch('/api/stats-viz/topomap', {
+        const data = await fetchJSON('/api/stats-viz/topomap', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ values, channel_names: ['Fp1', 'Fp2', 'Fpz'] })
         });
-        const data = await resp.json();
         if (data.error) throw new Error(data.error);
         renderTopomapOnCanvas('canvas-topomap', data, values, `${CONDITION_LABELS[condition] || condition} · ${indicator}`);
     } catch (err) {
@@ -2263,12 +2254,11 @@ async function exportStatsViz() {
         return;
     }
     try {
-        const resp = await fetch('/api/stats-viz/export', {
+        const data = await fetchJSON('/api/stats-viz/export', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ results: statsVizSummary, export_type: 'summary' })
         });
-        const data = await resp.json();
         if (data.error) throw new Error(data.error);
         // 触发下载
         const blob = new Blob([data.csv || ''], { type: 'text/csv;charset=utf-8;' });
@@ -2473,8 +2463,7 @@ async function detectOpenBCI() {
         formData.append('convert_uv', document.getElementById('obci-convert-uv').value === '1');
         formData.append('gain', document.getElementById('obci-gain').value || '0');
 
-        const resp = await fetch('/api/openbci/convert', { method: 'POST', body: formData });
-        const data = await resp.json();
+        const data = await fetchJSON('/api/openbci/convert', { method: 'POST', body: formData });
         if (data.detail) throw new Error(data.detail);
 
         obciData = data;
@@ -2602,8 +2591,7 @@ async function saveOpenBCI() {
         formData.append('condition', document.getElementById('obci-condition').value || 'openbci');
         formData.append('convert_uv', document.getElementById('obci-convert-uv').value === '1');
         formData.append('gain', document.getElementById('obci-gain').value || '0');
-        const resp = await fetch('/api/openbci/save', { method: 'POST', body: formData });
-        const data = await resp.json();
+        const data = await fetchJSON('/api/openbci/save', { method: 'POST', body: formData });
         if (data.detail) throw new Error(data.detail);
         showToast(`已保存: ${data.filename} (${data.n_samples} 样本, ${data.n_channels}ch)`);
     } catch (err) {
@@ -2624,17 +2612,15 @@ async function analyzeOpenBCI() {
         formData.append('convert_uv', document.getElementById('obci-convert-uv').value === '1');
         formData.append('gain', document.getElementById('obci-gain').value || '0');
 
-        const saveResp = await fetch('/api/openbci/save', { method: 'POST', body: formData });
-        const saveData = await saveResp.json();
+        const saveData = await fetchJSON('/api/openbci/save', { method: 'POST', body: formData });
         if (saveData.detail) throw new Error(saveData.detail);
 
         const params = getParams();
-        const analyzeResp = await fetch('/api/analyze', {
+        const analyzeData = await fetchJSON('/api/analyze', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ ...params, condition: saveData.condition }),
         });
-        const analyzeData = await analyzeResp.json();
         if (analyzeData.error) throw new Error(analyzeData.error);
 
         // Switch to flow recovery view
