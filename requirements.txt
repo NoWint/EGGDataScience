@@ -5,3 +5,9 @@ pandas>=2.0.0
 scipy>=1.17.0
 python-multipart>=0.0.20
 brainflow>=5.0.0
+# brainflow 5.x 依赖 pkg_resources,而 setuptools>=82 移除了该模块
+# 因此需要 pin setuptools<81 以保证 brainflow 可用
+setuptools<81
+# 深度学习模型 (eeg_dl 模块) 依赖
+torch>=2.0.0
+rich>=13.0.0
