@@ -211,6 +211,38 @@ class AnalyzeRequest(BaseModel):
     filter_params: Optional[Dict] = None
 
 
+def _run_all_modules(data, fs, events_df):
+    """运行全部 5 个分析模块 (批量导入与单文件全分析共用)"""
+    results = {}
+    # 1. 心流恢复
+    try:
+        results['flow_recovery'] = run_full_pipeline(data, fs, events_df)
+    except Exception as e:
+        results['flow_recovery'] = {'error': str(e)}
+    # 2. 频谱分析
+    try:
+        nperseg = min(1024, len(data) // 4 or 256)
+        results['spectrum'] = run_spectrum_analysis(data, fs, nperseg=nperseg, overlap=0.5)
+    except Exception as e:
+        results['spectrum'] = {'error': str(e)}
+    # 3. ERP
+    try:
+        results['erp'] = run_erp_analysis(data, fs, events_df, event_id='X0')
+    except Exception as e:
+        results['erp'] = {'error': str(e)}
+    # 4. ERSP
+    try:
+        results['ersp'] = run_ersp_analysis(data, fs, events_df, event_id='X0')
+    except Exception as e:
+        results['ersp'] = {'error': str(e)}
+    # 5. 伪迹检测
+    try:
+        results['artifact'] = run_artifact_analysis(data, fs)
+    except Exception as e:
+        results['artifact'] = {'error': str(e)}
+    return results
+
+
 @app.post("/api/analyze")
 async def analyze_data(req: AnalyzeRequest):
     """分析已上传的EEG数据"""
@@ -611,40 +643,7 @@ async def analyze_all(
                'duration_sec': len(data) / fs if fs else 0,
                'metadata': eeg_result['metadata']}
 
-    # 1. 心流恢复
-    try:
-        flow_result = run_full_pipeline(data, fs, events_df)
-        results['flow_recovery'] = flow_result
-    except Exception as e:
-        results['flow_recovery'] = {'error': str(e)}
-
-    # 2. 频谱分析
-    try:
-        spec_result = run_spectrum_analysis(data, fs, nperseg=min(1024, len(data)//4 or 256), overlap=0.5)
-        results['spectrum'] = spec_result
-    except Exception as e:
-        results['spectrum'] = {'error': str(e)}
-
-    # 3. ERP
-    try:
-        erp_result = run_erp_analysis(data, fs, events_df, event_id='X0')
-        results['erp'] = erp_result
-    except Exception as e:
-        results['erp'] = {'error': str(e)}
-
-    # 4. ERSP
-    try:
-        ersp_result = run_ersp_analysis(data, fs, events_df, event_id='X0')
-        results['ersp'] = ersp_result
-    except Exception as e:
-        results['ersp'] = {'error': str(e)}
-
-    # 5. 伪迹检测
-    try:
-        art_result = run_artifact_analysis(data, fs)
-        results['artifact'] = art_result
-    except Exception as e:
-        results['artifact'] = {'error': str(e)}
+    results.update(_run_all_modules(data, fs, events_df))
 
     FULL_RESULTS_STORE[condition] = results
     return _to_jsonable(results)
