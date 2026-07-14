@@ -7,11 +7,14 @@ import json
 import threading
 import time
 import csv
+import logging
 from pathlib import Path
 from typing import Optional, Callable, Dict, Any, List
 from collections import deque
 
 import websocket  # websocket-client 库
+
+logger = logging.getLogger("neurolink")
 
 NEUROLINK_URL = "wss://eeg.yzjtiantian.cn/ws"
 
@@ -47,6 +50,13 @@ class NeuroLinkClient:
         self._on_data_callback: Optional[Callable] = None
         self._lock = threading.Lock()
 
+        # 错误信息 (供前端显示)
+        self._last_error: Optional[str] = None
+
+        # 心流状态检测
+        self._flow_state: str = "idle"  # idle | entered | exited
+        self._flow_index: float = 0.0
+
     def set_data_callback(self, callback: Callable[[dict], None]):
         """设置数据回调 (每收到一帧时调用)"""
         self._on_data_callback = callback
@@ -56,6 +66,8 @@ class NeuroLinkClient:
         self.room_code = room_code
         self.nickname = nickname
         self.session_id = f"eegds-{int(time.time())}"
+        self._last_error = None
+        self.connected = False
 
         self.ws = websocket.WebSocketApp(
             NEUROLINK_URL,
@@ -116,6 +128,7 @@ class NeuroLinkClient:
         msg_type = msg.get("type")
 
         if msg_type == "room_info":
+            logger.info("收到 room_info, 加入房间 %s", self.room_code)
             ws.send(json.dumps({
                 "type": "join_room",
                 "code": self.room_code,
@@ -123,6 +136,7 @@ class NeuroLinkClient:
             }))
 
         elif msg_type == "room_joined":
+            logger.info("已加入房间, 认领 monitor 角色")
             ws.send(json.dumps({
                 "type": "claim_role",
                 "role": "monitor",
@@ -130,7 +144,31 @@ class NeuroLinkClient:
             }))
 
         elif msg_type == "role_claimed" and msg.get("role") == "monitor":
+            logger.info("monitor 角色已确认, 开始接收数据")
             self.connected = True
+
+        elif msg_type == "role_denied":
+            reason = msg.get("reason", "")
+            logger.warning("角色被拒绝: %s", reason)
+            if "reconnect" in reason:
+                logger.info("5 秒后发送 reconnect 请求")
+                time.sleep(5)
+                ws.send(json.dumps({
+                    "type": "reconnect",
+                    "session_id": self.session_id,
+                }))
+            else:
+                self._last_error = f"角色被拒绝: {reason}"
+
+        elif msg_type == "room_denied":
+            reason = msg.get("reason", "房间不存在或已关闭")
+            logger.error("房间加入失败: %s", reason)
+            self._last_error = f"房间加入失败: {reason}"
+            self.connected = False
+
+        elif msg_type == "error":
+            logger.error("服务端错误: %s", msg.get("message", msg))
+            self._last_error = msg.get("message", "未知错误")
 
         elif msg_type == "eeg_frame":
             self._on_eeg_frame(msg)
@@ -168,8 +206,17 @@ class NeuroLinkClient:
             self._write_frame(msg)
 
     def _on_metrics(self, msg):
-        """缓存最新指标"""
+        """缓存最新指标, 计算心流状态"""
         self._latest_metrics = msg
+        # 心流状态检测: θ/α 比值稳定在 1.0-2.0 且认知负载低 → 心流进入
+        tar = msg.get("theta_alpha_ratio", 0)
+        load = msg.get("cognitive_load_index", 1)
+        self._flow_index = tar
+        if tar >= 1.0 and tar <= 2.0 and load < 0.5:
+            self._flow_state = "entered"
+        elif tar > 2.5 or load > 0.7:
+            self._flow_state = "exited"
+        # 其他情况保持当前状态
 
     def get_latest_metrics(self) -> Optional[dict]:
         return self._latest_metrics
@@ -200,7 +247,7 @@ class NeuroLinkClient:
         self.recording = True
 
     def _write_frame(self, msg: dict):
-        """将 EEG 帧写入 CSV"""
+        """将 EEG 帧写入 CSV (Marker 列记录心流状态: 0=idle, 3=entered, 4=exited)"""
         if not self._csv_writer:
             return
         channels = msg.get("channels", [0, 0, 0, 0])
@@ -208,12 +255,14 @@ class NeuroLinkClient:
         # 补齐 4 通道
         while len(channels) < 4:
             channels.append(0.0)
+        # 心流状态编码为 Marker: 0=idle, 3=心流进入, 4=心流脱离
+        flow_marker = {"idle": 0, "entered": 3, "exited": 4}.get(self._flow_state, 0)
         self._csv_writer.writerow([
             self._record_count,
             f"{channels[0]:.4f}", f"{channels[1]:.4f}",
             f"{channels[2]:.4f}", f"{channels[3]:.4f}",
             0, 0, 0,  # accel (NeuroLink 单独发 accel_frame)
-            ts, 0,  # marker
+            ts, flow_marker,
         ])
         self._record_count += 1
 
@@ -239,12 +288,16 @@ class NeuroLinkClient:
             "record_duration": time.time() - self._record_start_time if self._record_start_time and self.recording else 0,
             "current_phase": self._current_phase.get("phase_id") if self._current_phase else None,
             "buffer_size": len(self._eeg_buffer),
+            "flow_state": self._flow_state,
+            "flow_index": round(self._flow_index, 3),
+            "last_error": self._last_error,
         }
 
     def _on_error(self, ws, error):
-        pass
+        logger.error("WebSocket 错误: %s", error)
 
     def _on_close(self, ws, code, msg):
+        logger.info("WebSocket 关闭: code=%s, msg=%s", code, msg)
         self.connected = False
 
 

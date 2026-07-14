@@ -1199,3 +1199,142 @@ select.text-input {
 .btn-primary:disabled { background: #d1d5db; cursor: not-allowed; }
 .btn-danger { background: #ef4444; color: #fff; border: none; padding: 8px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; }
 .btn-danger:disabled { background: #d1d5db; cursor: not-allowed; }
+
+/* ==========================================================
+   CSS 变量别名 (供 batch.js / neurolink.js 内联样式使用)
+   ========================================================== */
+:root {
+    --border: var(--border-l1);
+    --primary: var(--brand);
+}
+
+/* ==========================================================
+   通用视图容器 (批量分析 / 实时监测)
+   ========================================================== */
+.view-header {
+    padding: var(--space-5) var(--space-6) var(--space-4);
+    border-bottom: 1px solid var(--border-l1);
+}
+
+.view-title {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--text-primary);
+    letter-spacing: -0.02em;
+    margin-bottom: var(--space-1);
+}
+
+.view-desc {
+    font-size: 13px;
+    color: var(--text-tertiary);
+}
+
+.view-body {
+    flex: 1;
+    overflow-y: auto;
+}
+
+/* ==========================================================
+   实时监测专属样式
+   ========================================================== */
+.nl-panel {
+    border: 1px solid var(--border-l1);
+    background: var(--surface-elevated);
+    border-radius: var(--radius-lg);
+    padding: var(--space-4);
+    margin-bottom: var(--space-5);
+}
+
+.nl-panel-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: var(--space-3);
+}
+
+.nl-canvas {
+    width: 100%;
+    border: 1px solid var(--border-l1);
+    border-radius: var(--radius-md);
+    background: var(--surface-sunken);
+}
+
+.nl-metric-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: var(--space-3);
+    margin-bottom: var(--space-5);
+}
+
+.nl-flow-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-4);
+    border-radius: var(--radius-xl);
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.nl-flow-badge.entered {
+    background: rgba(29, 201, 129, 0.12);
+    color: var(--success);
+}
+
+.nl-flow-badge.exited {
+    background: rgba(248, 116, 84, 0.12);
+    color: var(--error);
+}
+
+.nl-flow-badge.idle {
+    background: var(--border-l0);
+    color: var(--text-tertiary);
+}
+
+/* ==========================================================
+   深色模式 — prefers-color-scheme: dark
+   ========================================================== */
+@media (prefers-color-scheme: dark) {
+    :root {
+        --brand: #6B5FF5;
+        --brand-hover: #8279FF;
+        --brand-bg: rgba(107, 95, 245, 0.12);
+        --brand-bg-hover: rgba(107, 95, 245, 0.18);
+
+        --invert: #E5E5E5;
+        --invert-hover: #FFFFFF;
+
+        --surface-sidebar: #1A1A1A;
+        --surface-main: #0D0D0D;
+        --surface-elevated: #1E1E1E;
+        --surface-sunken: #252525;
+
+        --text-primary: #F5F5F5;
+        --text-secondary: #E0E0E0;
+        --text-tertiary: #A0A0A0;
+        --text-quaternary: #707070;
+        --text-on-brand: #FFFFFF;
+
+        --border-l0: rgba(255, 255, 255, 0.06);
+        --border-l1: rgba(255, 255, 255, 0.10);
+        --border-l2: rgba(255, 255, 255, 0.16);
+        --border-l3: rgba(255, 255, 255, 0.32);
+
+        --shadow-float: 0 4px 16px rgba(0, 0, 0, 0.32), 0 1px 4px rgba(0, 0, 0, 0.24);
+        --shadow-overlay: 0 8px 32px rgba(0, 0, 0, 0.40), 0 2px 8px rgba(0, 0, 0, 0.28);
+    }
+
+    html, body {
+        background: var(--surface-main);
+    }
+
+    .nl-canvas {
+        background: var(--surface-sunken);
+    }
+
+    /* 旧内联样式硬编码颜色覆盖 */
+    .realtime-stats .stat-card { background: var(--surface-elevated) !important; border-color: var(--border-l2) !important; }
+    .realtime-stats .stat-value { color: var(--text-primary) !important; }
+    .bp-grid span { color: var(--text-tertiary) !important; }
+    .bp-grid strong { color: var(--text-primary) !important; }
+}

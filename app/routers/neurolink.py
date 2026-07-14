@@ -35,7 +35,8 @@ def neurolink_connect(req: ConnectRequest):
     ok = client.connect(req.room_code, req.nickname)
     if ok:
         return {"ok": True, "room_code": req.room_code}
-    return {"ok": False, "error": "连接失败,请检查房间号和网络"}
+    error = getattr(client, '_last_error', None) or "连接失败,请检查房间号和网络"
+    return {"ok": False, "error": error}
 
 
 @router.post("/disconnect")
