@@ -50,6 +50,20 @@ def init_db():
         )
     """)
 
+    # 迁移：为 experiments 表补充新列（向后兼容，已有列则跳过）
+    cursor.execute("PRAGMA table_info(experiments)")
+    existing_columns = {row[1] for row in cursor.fetchall()}
+    migrations = [
+        ("eeg_path", "TEXT"),
+        ("source", "TEXT DEFAULT 'upload'"),
+        ("analysis_status", "TEXT DEFAULT 'pending'"),
+    ]
+    for col_name, col_def in migrations:
+        if col_name not in existing_columns:
+            cursor.execute(
+                f"ALTER TABLE experiments ADD COLUMN {col_name} {col_def}"
+            )
+
     conn.commit()
     conn.close()
 
